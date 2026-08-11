@@ -10,3 +10,595 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://epc.propertykickstart.co.uk/">
 <link rel="canonical" href="https://epc.propertykickstart.co.uk/">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is an EPC rating?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An Energy Performance Certificate (EPC) rates a property's energy efficiency from A (most efficient) to G (least efficient). It is required by law whenever a property is sold, let or built in England and Wales."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How long does an EPC last?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An EPC is valid for 10 years from the date it was lodged. After 10 years a new assessment is required before the property can be sold or let again."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What EPC rating do landlords need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Since April 2020, rented properties in England and Wales must have a minimum EPC rating of E. The Government has consulted on raising this to C by 2028 for new tenancies — investors should factor potential upgrade costs into their due diligence."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does an EPC affect property value?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Research consistently shows that higher EPC ratings command a price premium. A poor rating can suppress both sale price and rental demand, while improvements to reach a C or above can add measurable value."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I check an EPC for any property in the UK?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "This tool covers England and Wales only. Scotland has a separate register at energysavingtrust.org.uk and Northern Ireland uses the Landmark register. Data comes from the official MHCLG EPC register."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What if no EPC is found for a property?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Some properties have never had an EPC lodged — typically those not sold or let since the register began. If no certificate is found, you may need to commission a new EPC assessment before purchase or letting."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How accurate is this EPC data?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Data is sourced directly from the official MHCLG EPC register via the Open Data Communities API. It reflects the most recently lodged certificate for each property."
+      }
+    }
+  ]
+}
+</script>
+<style>
+:root {
+  --pk-navy: #0f2340;
+  --pk-gold: #c8a84b;
+  --pk-gold-light: #f0e4c0;
+  --pk-white: #ffffff;
+  --pk-off-white: #f7f5f0;
+  --pk-text: #1a1a2e;
+  --pk-muted: #5a6170;
+  --pk-border: #ddd8cc;
+  --pk-radius: 12px;
+  --pk-shadow: 0 4px 24px rgba(15,35,64,.10);
+  --epc-a: #008054; --epc-b: #19b459; --epc-c: #8dce46;
+  --epc-d: #ffd500; --epc-e: #fcaa65; --epc-f: #ef8023; --epc-g: #e9153b;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--pk-off-white); color: var(--pk-text); font-size: 16px; line-height: 1.6; }
+a { color: var(--pk-navy); }
+.wrap { width: min(1100px, 100%); margin: auto; padding: 0 20px; }
+
+/* Header */
+.site-header { background: var(--pk-navy); padding: 16px 0; }
+.site-header .wrap { display: flex; align-items: center; justify-content: space-between; }
+.site-logo { color: var(--pk-white); font-weight: 800; font-size: 1.2rem; text-decoration: none; letter-spacing: -.02em; }
+.site-logo span { color: var(--pk-gold); }
+.header-link { color: var(--pk-gold-light); font-size: .85rem; text-decoration: none; }
+.header-link:hover { color: var(--pk-white); }
+
+/* Hero */
+.hero { background: var(--pk-navy); color: var(--pk-white); padding: 48px 0 56px; }
+.hero-eyebrow { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--pk-gold); margin-bottom: 12px; }
+.hero h1 { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; line-height: 1.1; letter-spacing: -.03em; max-width: 700px; margin-bottom: 16px; }
+.hero p { font-size: 1.1rem; color: #b8c4d4; max-width: 580px; }
+
+/* Checker card */
+.checker-section { padding: 40px 0 60px; }
+.checker-card { background: var(--pk-white); border-radius: var(--pk-radius); box-shadow: var(--pk-shadow); padding: 36px; max-width: 680px; margin: 0 auto; }
+.checker-card h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+.checker-card > p { color: var(--pk-muted); font-size: .95rem; margin-bottom: 24px; }
+
+/* Postcode lookup */
+.postcode-row { display: flex; gap: 10px; }
+.postcode-input { flex: 1; padding: 14px 16px; border: 2px solid var(--pk-border); border-radius: 8px; font-size: 1.1rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--pk-text); background: var(--pk-white); }
+.postcode-input:focus { outline: none; border-color: var(--pk-navy); }
+.btn-primary { padding: 14px 24px; background: var(--pk-navy); color: var(--pk-white); border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .15s; }
+.btn-primary:hover { background: #1a3a5c; }
+.btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Address picker */
+.address-section { margin-top: 24px; display: none; }
+.address-section.visible { display: block; }
+.address-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 10px; }
+.address-list { list-style: none; display: grid; gap: 8px; }
+.address-list li button { width: 100%; text-align: left; padding: 12px 16px; background: var(--pk-off-white); border: 2px solid var(--pk-border); border-radius: 8px; font-size: .95rem; cursor: pointer; transition: border-color .15s, background .15s; }
+.address-list li button:hover { border-color: var(--pk-navy); background: #eef2f7; }
+
+/* Results */
+.result-section { margin-top: 28px; display: none; }
+.result-section.visible { display: block; }
+.result-header { display: flex; align-items: flex-start; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--pk-border); margin-bottom: 20px; flex-wrap: wrap; }
+.epc-badge { width: 72px; height: 72px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 2.4rem; font-weight: 900; color: #fff; flex-shrink: 0; }
+.result-meta h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+.result-meta p { font-size: .88rem; color: var(--pk-muted); }
+.result-meta a { color: var(--pk-navy); font-size: .85rem; }
+
+/* EPC visual scale */
+.epc-scale { margin: 20px 0; }
+.epc-scale-title { font-size: .85rem; font-weight: 700; margin-bottom: 10px; color: var(--pk-muted); text-transform: uppercase; letter-spacing: .08em; }
+.epc-bars { display: grid; gap: 4px; }
+.epc-bar { display: flex; align-items: center; gap: 10px; }
+.epc-bar-label { width: 20px; font-weight: 800; font-size: .9rem; }
+.epc-bar-fill { height: 28px; border-radius: 4px; display: flex; align-items: center; padding: 0 10px; color: #fff; font-size: .8rem; font-weight: 700; transition: width .6s ease; min-width: 32px; }
+.epc-bar.current .epc-bar-fill::after { content: " ← current"; font-size: .72rem; font-weight: 400; }
+.epc-bar.potential .epc-bar-fill::after { content: " ← potential"; font-size: .72rem; font-weight: 400; }
+
+/* Investor context */
+.investor-context { background: #eef6ff; border-left: 4px solid var(--pk-navy); border-radius: 0 8px 8px 0; padding: 16px 20px; margin: 20px 0; }
+.investor-context h4 { font-size: .9rem; font-weight: 700; margin-bottom: 6px; color: var(--pk-navy); }
+.investor-context p { font-size: .88rem; color: #2a3a50; line-height: 1.5; }
+
+/* Meta grid */
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+.meta-item { background: var(--pk-off-white); border-radius: 8px; padding: 12px 14px; }
+.meta-item dt { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--pk-muted); margin-bottom: 4px; }
+.meta-item dd { font-size: .95rem; font-weight: 600; }
+
+/* Not found state */
+.not-found-box { background: #fff8f0; border: 1px solid #f5c89a; border-radius: 8px; padding: 20px; margin-top: 20px; }
+.not-found-box h3 { font-size: 1rem; font-weight: 700; color: #8b4513; margin-bottom: 8px; }
+.not-found-box p { font-size: .9rem; color: #6b3a1f; }
+
+/* Attribution */
+.attribution-notice { font-size: .75rem; color: var(--pk-muted); margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--pk-border); line-height: 1.5; }
+
+/* Loading */
+.loading { display: none; text-align: center; padding: 24px; color: var(--pk-muted); font-size: .95rem; }
+.loading.visible { display: block; }
+.spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--pk-border); border-top-color: var(--pk-navy); border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Error */
+.error-box { background: #fff0f0; border: 1px solid #f5a0a0; border-radius: 8px; padding: 16px; color: #800000; font-size: .9rem; margin-top: 16px; display: none; }
+.error-box.visible { display: block; }
+
+/* Mock badge */
+.mock-notice { background: #fff8dc; border: 1px solid #e0c870; border-radius: 6px; padding: 8px 12px; font-size: .8rem; color: #705000; margin-bottom: 16px; display: none; }
+.mock-notice.visible { display: block; }
+
+/* Investor tools section */
+.investor-tools { padding: 60px 0; }
+.section-eyebrow { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--pk-gold); margin-bottom: 12px; }
+.investor-tools h2 { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 800; letter-spacing: -.03em; margin-bottom: 16px; }
+.investor-tools > .wrap > p { color: var(--pk-muted); max-width: 560px; margin-bottom: 40px; }
+.tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.tool-card { background: var(--pk-white); border-radius: var(--pk-radius); padding: 24px; box-shadow: var(--pk-shadow); }
+.tool-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+.tool-card p { font-size: .88rem; color: var(--pk-muted); }
+.tool-card .tag { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; background: var(--pk-gold-light); color: #705000; border-radius: 4px; padding: 2px 8px; margin-bottom: 10px; }
+
+/* FAQ */
+.faq-section { background: var(--pk-white); padding: 60px 0; }
+.faq-section h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.02em; margin-bottom: 32px; }
+.faq-list { display: grid; gap: 0; max-width: 740px; }
+.faq-item { border-bottom: 1px solid var(--pk-border); }
+.faq-q { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; cursor: pointer; font-weight: 700; font-size: .97rem; list-style: none; }
+.faq-q::after { content: "+"; font-size: 1.4rem; font-weight: 300; color: var(--pk-muted); flex-shrink: 0; }
+.faq-item.open .faq-q::after { content: "−"; }
+.faq-a { font-size: .92rem; color: var(--pk-muted); padding-bottom: 16px; line-height: 1.65; display: none; }
+.faq-item.open .faq-a { display: block; }
+
+/* CTA band */
+.cta-band { background: var(--pk-navy); color: var(--pk-white); padding: 60px 0; }
+.cta-band h2 { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 800; letter-spacing: -.03em; margin-bottom: 12px; }
+.cta-band p { color: #b8c4d4; margin-bottom: 24px; max-width: 520px; }
+.cta-link { display: inline-block; background: var(--pk-gold); color: var(--pk-navy); padding: 14px 28px; border-radius: 8px; font-weight: 800; text-decoration: none; font-size: 1rem; }
+.cta-link:hover { background: #dab84f; }
+
+/* Disclaimer */
+.disclaimer { padding: 32px 0; font-size: .8rem; color: var(--pk-muted); border-top: 1px solid var(--pk-border); line-height: 1.6; }
+.disclaimer strong { color: var(--pk-text); }
+
+/* Footer */
+footer { background: var(--pk-navy); color: #8090a8; padding: 28px 0; font-size: .82rem; }
+footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+footer a { color: #8090a8; text-decoration: none; }
+footer a:hover { color: var(--pk-white); }
+
+/* Last reviewed */
+.last-reviewed { font-size: .75rem; color: var(--pk-muted); margin-top: 12px; }
+
+@media (max-width: 640px) {
+  .checker-card { padding: 24px 18px; }
+  .postcode-row { flex-direction: column; }
+  .meta-grid { grid-template-columns: 1fr; }
+  .result-header { flex-direction: column; }
+  .site-header .wrap { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-logo" href="https://hub.propertykickstart.co.uk/">Property<span>Kickstart</span></a>
+    <a class="header-link" href="https://hub.propertykickstart.co.uk/tools">← Investor Tools</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-eyebrow">Free Investor Tool</div>
+    <h1>EPC Checker</h1>
+    <p>Look up the Energy Performance Certificate rating for any property in England and Wales — instantly, free, no login required.</p>
+  </div>
+</section>
+
+<section class="checker-section">
+  <div class="wrap">
+    <div class="checker-card">
+      <h2>Look up an EPC rating</h2>
+      <p>Enter a postcode to find properties and check their current EPC rating.</p>
+
+      <div id="mockNotice" class="mock-notice">
+        ⚠ Running in demo mode — results shown are illustrative only. Live data requires the EPC API token to be configured.
+      </div>
+
+      <div class="postcode-row">
+        <input type="text" id="postcodeInput" class="postcode-input" placeholder="e.g. SW1A 1AA" maxlength="8" autocomplete="postal-code" aria-label="Postcode">
+        <button id="searchBtn" class="btn-primary" type="button">Search</button>
+      </div>
+
+      <div id="loadingA" class="loading">
+        <div class="spinner"></div><br>Searching for properties…
+      </div>
+      <div id="errorBox" class="error-box" role="alert"></div>
+
+      <div id="addressSection" class="address-section">
+        <h3 id="addressCount"></h3>
+        <ul id="addressList" class="address-list"></ul>
+      </div>
+
+      <div id="loadingB" class="loading">
+        <div class="spinner"></div><br>Looking up EPC certificate…
+      </div>
+
+      <div id="resultSection" class="result-section">
+        <div id="notFoundBox" class="not-found-box" style="display:none">
+          <h3>No EPC found for this property</h3>
+          <p>This property may not have had an EPC assessment. A new EPC assessment will be required before the property can be sold or let. Budget approximately £60–£120 for a new certificate.</p>
+        </div>
+
+        <div id="certResult">
+          <div class="result-header">
+            <div id="epcBadge" class="epc-badge"></div>
+            <div class="result-meta">
+              <h3 id="resultAddress"></h3>
+              <p id="resultCertInfo"></p>
+              <a id="resultCertLink" href="#" target="_blank" rel="noopener noreferrer">View official certificate →</a>
+            </div>
+          </div>
+
+          <div class="epc-scale">
+            <div class="epc-scale-title">Energy efficiency rating</div>
+            <div class="epc-bars" id="epcBars"></div>
+          </div>
+
+          <div id="investorContext" class="investor-context"></div>
+
+          <dl class="meta-grid" id="metaGrid"></dl>
+
+          <div class="attribution-notice">
+            Address and postcode data: © Crown copyright and database rights. Ordnance Survey licence number 100026316. Royal Mail and Post Office trademarks. EPC data: Ministry of Housing, Communities &amp; Local Government, Open Data Communities, licensed under Open Government Licence v3.0.
+          </div>
+        </div>
+
+        <div class="last-reviewed">Last reviewed: 10 August 2026</div>
+
+        <button id="newSearchBtn" class="btn-primary" type="button" style="margin-top:20px;width:100%">Search another postcode</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="investor-tools">
+  <div class="wrap">
+    <div class="section-eyebrow">Property Kickstart</div>
+    <h2>More free investor tools</h2>
+    <p>Practical resources to help you analyse deals, understand legislation and make better property decisions.</p>
+    <div class="tools-grid">
+      <div class="tool-card">
+        <div class="tag">Coming soon</div>
+        <h3>Deal Analyser</h3>
+        <p>Run the numbers on any buy-to-let or HMO deal. Yield, cashflow, ROI — in seconds.</p>
+      </div>
+      <div class="tool-card">
+        <div class="tag">Live</div>
+        <h3>EPC Checker</h3>
+        <p>Instant EPC rating lookup by postcode. Check compliance and estimate upgrade costs.</p>
+      </div>
+      <div class="tool-card">
+        <div class="tag">Hub</div>
+        <h3>Investor Insights</h3>
+        <p>Fortnightly analysis of strategy, legislation and market conditions for UK property investors.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="faq-section">
+  <div class="wrap">
+    <h2>Frequently asked questions</h2>
+    <dl class="faq-list" id="faqList">
+      <div class="faq-item">
+        <dt class="faq-q">What is an EPC rating?</dt>
+        <dd class="faq-a">An Energy Performance Certificate (EPC) rates a property's energy efficiency from A (most efficient) to G (least efficient). It is required by law whenever a property is sold, let or built in England and Wales.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">How long does an EPC last?</dt>
+        <dd class="faq-a">An EPC is valid for 10 years from the date it was lodged. After 10 years a new assessment is required before the property can be sold or let again.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">What EPC rating do landlords need?</dt>
+        <dd class="faq-a">Since April 2020, rented properties in England and Wales must have a minimum EPC rating of E. The Government has consulted on raising this to C by 2028 for new tenancies — investors should factor potential upgrade costs into their due diligence.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">Does an EPC affect property value?</dt>
+        <dd class="faq-a">Yes. Research consistently shows that higher EPC ratings command a price premium. A poor rating can suppress both sale price and rental demand, while improvements to reach a C or above can add measurable value.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">Can I check an EPC for any property in the UK?</dt>
+        <dd class="faq-a">This tool covers England and Wales only. Scotland has a separate register at energysavingtrust.org.uk and Northern Ireland uses the Landmark register. Data comes from the official MHCLG EPC register.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">What if no EPC is found for a property?</dt>
+        <dd class="faq-a">Some properties have never had an EPC lodged — typically those not sold or let since the register began. If no certificate is found, you may need to commission a new EPC assessment before purchase or letting.</dd>
+      </div>
+      <div class="faq-item">
+        <dt class="faq-q">How accurate is this EPC data?</dt>
+        <dd class="faq-a">Data is sourced directly from the official MHCLG EPC register via the Open Data Communities API. It reflects the most recently lodged certificate for each property.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="wrap">
+    <h2>Want more investor insight?</h2>
+    <p>Join the Property Kickstart hub — free fortnightly analysis, deal strategy and tools for serious UK property investors.</p>
+    <a class="cta-link" href="https://hub.propertykickstart.co.uk/">Explore the hub →</a>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="disclaimer">
+    <strong>Disclaimer.</strong> This tool provides information for general research purposes only. EPC data is sourced from the MHCLG Open Data Communities register and is provided as-is. Property Kickstart accepts no liability for decisions made on the basis of this information. Always obtain independent professional advice before making any property investment decision. EPC ratings reflect the certificate most recently lodged on the official register and may not reflect the current condition of a property. This tool is not a substitute for a current, in-person EPC assessment.
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Property Kickstart</span>
+    <nav style="display:flex;gap:20px;">
+      <a href="https://hub.propertykickstart.co.uk/">Hub</a>
+      <a href="https://hub.propertykickstart.co.uk/privacy">Privacy</a>
+      <a href="https://hub.propertykickstart.co.uk/tools">Tools</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  const EPC_COLORS = { A:'#008054',B:'#19b459',C:'#8dce46',D:'#ffd500',E:'#fcaa65',F:'#ef8023',G:'#e9153b' };
+  const EPC_WIDTHS = { A:92,B:80,C:68,D:56,E:44,F:32,G:20 };
+
+  const $ = id => document.getElementById(id);
+  const show = el => el && el.classList.add('visible');
+  const hide = el => el && el.classList.remove('visible');
+  const showEl = el => { if(el) el.style.display=''; };
+  const hideEl = el => { if(el) el.style.display='none'; };
+
+  function setError(msg) {
+    const box = $('errorBox');
+    box.textContent = msg;
+    show(box);
+  }
+  function clearError() { hide($('errorBox')); }
+
+  function reset() {
+    hide($('addressSection'));
+    hide($('resultSection'));
+    hide($('loadingA'));
+    hide($('loadingB'));
+    clearError();
+  }
+
+  async function apiCall(body) {
+    const res = await fetch('/.netlify/functions/epc-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || 'Lookup failed');
+    return data;
+  }
+
+  function renderEpcBars(current, potential) {
+    const ratings = ['A','B','C','D','E','F','G'];
+    const bars = $('epcBars');
+    bars.innerHTML = '';
+    ratings.forEach(r => {
+      const isCurrent = r === current;
+      const isPotential = r === potential && r !== current;
+      const div = document.createElement('div');
+      div.className = 'epc-bar' + (isCurrent ? ' current' : '') + (isPotential ? ' potential' : '');
+      const w = EPC_WIDTHS[r] || 20;
+      div.innerHTML = `<span class="epc-bar-label">${r}</span>
+        <div class="epc-bar-fill" style="width:${w}%;background:${EPC_COLORS[r]}">${isCurrent||isPotential ? r : ''}</div>`;
+      bars.appendChild(div);
+    });
+  }
+
+  function investorText(rating) {
+    const map = {
+      A: 'Excellent — A-rated properties command premium rents and sale prices. Minimal EPC-related risk for investors.',
+      B: 'Very good — B ratings are well above the minimum threshold. Low regulatory risk and strong rental demand.',
+      C: 'Good — C ratings are above the current E minimum and meet the proposed 2028 landlord standard. A safe position for buy-to-let investors.',
+      D: 'Adequate — Currently compliant for letting, but if the proposed C minimum for new tenancies passes in 2028, upgrades will be required. Factor improvement costs into your deal.',
+      E: 'Minimum compliant — E is the current legal minimum for rental. One further notch down means the property cannot legally be let without exemption. Upgrade costs should be a core part of due diligence.',
+      F: 'Non-compliant for letting — An F-rated property cannot currently be let without a valid exemption. Significant improvement works are required before it can generate rental income. Model upgrade costs carefully.',
+      G: 'Non-compliant for letting — A G-rated property cannot currently be let without a valid exemption. This represents significant regulatory and financial risk for investors. Major improvement works will be needed.'
+    };
+    return map[rating] || 'EPC rating found. Check compliance requirements for your intended use.';
+  }
+
+  function renderResult(cert, address) {
+    const rating = cert.epcRating;
+    if (cert.epcEvidenceStatus === 'Not found') {
+      show($('resultSection'));
+      showEl($('notFoundBox'));
+      hideEl($('certResult'));
+      return;
+    }
+    hideEl($('notFoundBox'));
+    showEl($('certResult'));
+
+    const badge = $('epcBadge');
+    badge.textContent = rating;
+    badge.style.background = EPC_COLORS[rating] || '#888';
+
+    $('resultAddress').textContent = cert.address || address || '';
+    $('resultCertInfo').textContent = cert.certDate
+      ? `Certificate lodged: ${cert.certDate} · Valid until: ${cert.expiryDate}`
+      : 'Certificate date not available';
+
+    const certLink = $('resultCertLink');
+    if (cert.officialCertUrl) {
+      certLink.href = cert.officialCertUrl;
+      showEl(certLink);
+    } else {
+      hideEl(certLink);
+    }
+
+    renderEpcBars(rating, cert.potentialRating);
+
+    $('investorContext').innerHTML = `<h4>Investor context</h4><p>${investorText(rating)}</p>`;
+
+    const grid = $('metaGrid');
+    const items = [
+      ['Current rating', rating + ' (' + cert.score + '/100)'],
+      ['Potential rating', cert.potentialRating + ' (' + cert.potentialScore + '/100)'],
+      ['Property type', cert.propertyType || '—'],
+      ['Certificate no.', cert.certNumber ? cert.certNumber.slice(0,20)+'…' : '—'],
+    ];
+    grid.innerHTML = items.map(([dt,dd]) =>
+      `<div class="meta-item"><dt>${dt}</dt><dd>${dd}</dd></div>`
+    ).join('');
+
+    show($('resultSection'));
+  }
+
+  async function doSearch() {
+    const postcode = $('postcodeInput').value.trim().toUpperCase();
+    if (!postcode) { setError('Please enter a postcode.'); return; }
+
+    reset();
+    $('searchBtn').disabled = true;
+    show($('loadingA'));
+
+    try {
+      const data = await apiCall({ op: 'search', postcode });
+
+      if (data.mock) show($('mockNotice'));
+      else hide($('mockNotice'));
+
+      hide($('loadingA'));
+
+      const addresses = data.addresses || [];
+      if (addresses.length === 0) {
+        setError('No properties found for that postcode. Please check and try again.');
+        return;
+      }
+
+      const section = $('addressSection');
+      $('addressCount').textContent = `${addresses.length} propert${addresses.length === 1 ? 'y' : 'ies'} found — select one to check its EPC`;
+      const list = $('addressList');
+      list.innerHTML = '';
+      addresses.forEach(addr => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = addr.address;
+        btn.addEventListener('click', () => doLookup(addr.uprn, addr.address));
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+      show(section);
+    } catch (err) {
+      hide($('loadingA'));
+      if (err.message && err.message.includes('out_of_scope')) {
+        setError('This postcode appears to be in Scotland or Northern Ireland. This tool covers England and Wales only.');
+      } else {
+        setError('Something went wrong: ' + (err.message || 'Unknown error'));
+      }
+    } finally {
+      $('searchBtn').disabled = false;
+    }
+  }
+
+  async function doLookup(uprn, address) {
+    hide($('addressSection'));
+    show($('loadingB'));
+
+    try {
+      const data = await apiCall({ op: 'certificate', uprn });
+      hide($('loadingB'));
+      renderResult(data.certificate, address);
+    } catch (err) {
+      hide($('loadingB'));
+      setError('Could not retrieve EPC certificate: ' + (err.message || 'Unknown error'));
+    }
+  }
+
+  $('searchBtn').addEventListener('click', doSearch);
+  $('postcodeInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  $('newSearchBtn').addEventListener('click', () => {
+    reset();
+    $('postcodeInput').value = '';
+    $('postcodeInput').focus();
+  });
+
+  // FAQ accordion
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.addEventListener('click', () => {
+      const item = q.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
