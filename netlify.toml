@@ -6,6 +6,14 @@
   node_bundler = "esbuild"
   external_node_modules = []
 
+# Serve the canonical Privacy Notice from the privacy.propertykickstart.co.uk domain alias.
+# The privacy domain must be assigned to this Netlify project before DNS is switched live.
+[[redirects]]
+  from = "https://privacy.propertykickstart.co.uk/*"
+  to = "/property-kickstart-privacy-v1.0-2026-08-19.html"
+  status = 200
+  force = true
+
 # Redirect API calls to the Netlify function
 [[redirects]]
   from = "/api/epc-lookup"
