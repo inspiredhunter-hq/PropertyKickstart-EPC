@@ -225,10 +225,38 @@ footer a:hover { color: var(--pk-white); }
 /* Last reviewed */
 .last-reviewed { font-size: .75rem; color: var(--pk-muted); margin-top: 12px; }
 
+/* ACT-633: Sold property evidence card */
+.comparator-card { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--pk-border); display: none; }
+.comparator-card.visible { display: block; }
+.comparator-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+.comparator-card > .comparator-subtitle { font-size: .82rem; color: var(--pk-muted); margin-bottom: 16px; }
+.comparator-strength { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border-radius: 4px; padding: 3px 9px; margin-bottom: 14px; }
+.comparator-strength.strong { background: #e3f6ea; color: #0a6b3a; }
+.comparator-strength.moderate { background: #fff4e0; color: #8a5a00; }
+.comparator-strength.limited { background: #fdeadb; color: #9a4c10; }
+.comparator-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.comparator-summary-grid .meta-item dd { font-size: .92rem; }
+.comparator-asking-row { display: flex; gap: 10px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+.comparator-asking-row label { font-size: .85rem; font-weight: 600; color: var(--pk-text); }
+.comparator-asking-input { padding: 10px 12px; border: 2px solid var(--pk-border); border-radius: 8px; font-size: .95rem; width: 160px; }
+.comparator-asking-input:focus { outline: none; border-color: var(--pk-navy); }
+.btn-secondary { padding: 10px 18px; background: var(--pk-off-white); color: var(--pk-navy); border: 2px solid var(--pk-navy); border-radius: 8px; font-size: .88rem; font-weight: 700; cursor: pointer; }
+.btn-secondary:hover { background: #eef2f7; }
+.comparator-premium { font-size: .88rem; font-weight: 700; margin-left: 4px; }
+.comparables-table-wrap { overflow-x: auto; margin-top: 12px; }
+.comparables-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.comparables-table th { text-align: left; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--pk-muted); padding: 8px 10px; border-bottom: 1px solid var(--pk-border); white-space: nowrap; }
+.comparables-table td { padding: 10px; border-bottom: 1px solid var(--pk-border); vertical-align: top; }
+.comparator-relaxation-note { font-size: .8rem; color: var(--pk-muted); background: var(--pk-off-white); border-radius: 6px; padding: 10px 12px; margin-top: 12px; }
+.comparator-disclosure { font-size: .75rem; color: var(--pk-muted); margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--pk-border); line-height: 1.5; }
+.comparator-insufficient { background: #fff8f0; border: 1px solid #f5c89a; border-radius: 8px; padding: 16px; font-size: .88rem; color: #6b3a1f; }
+.comparator-unavailable { font-size: .85rem; color: var(--pk-muted); font-style: italic; }
+
 @media (max-width: 640px) {
   .checker-card { padding: 24px 18px; }
   .postcode-row { flex-direction: column; }
   .meta-grid { grid-template-columns: 1fr; }
+  .comparator-summary-grid { grid-template-columns: 1fr; }
   .result-header { flex-direction: column; }
   .site-header .wrap { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
@@ -307,6 +335,16 @@ footer a:hover { color: var(--pk-white); }
 
           <div class="attribution-notice">
             Address and postcode data: © Crown copyright and database rights. Ordnance Survey licence number 100026316. Royal Mail and Post Office trademarks. EPC data: Ministry of Housing, Communities &amp; Local Government, Open Data Communities, licensed under Open Government Licence v3.0.
+          </div>
+
+          <!-- ACT-633: Sold property evidence card. Independent of the EPC
+               result above — if comparator data is unavailable, the EPC
+               result remains fully usable. -->
+          <div id="comparatorCard" class="comparator-card">
+            <h3>Sold property evidence</h3>
+            <p class="comparator-subtitle">Indicative comparable evidence only — not a formal valuation.</p>
+
+            <div id="comparatorBody"></div>
           </div>
         </div>
 
@@ -389,7 +427,7 @@ footer a:hover { color: var(--pk-white); }
 
 <div class="wrap">
   <div class="disclaimer">
-    <strong>Disclaimer.</strong> This tool provides information for general research purposes only. EPC data is sourced from the MHCLG Open Data Communities register and is provided as-is. Property Kickstart accepts no liability for decisions made on the basis of this information. Always obtain independent professional advice before making any property investment decision. EPC ratings reflect the certificate most recently lodged on the official register and may not reflect the current condition of a property. This tool is not a substitute for a current, in-person EPC assessment.
+    <strong>Disclaimer.</strong> This tool provides information for general research purposes only. EPC data is sourced from the MHCLG Open Data Communities register and is provided as-is. Property Kickstart accepts no liability for decisions made on the basis of this information. Always obtain independent professional advice before making any property investment decision. EPC ratings reflect the certificate most recently lodged on the official register and may not reflect the current condition of a property. This tool is not a substitute for a current, in-person EPC assessment. Sold property evidence, where shown, is indicative comparable evidence only and is not a formal valuation. HM Land Registry registrations may lag completion. Always undertake your own legal, financial, valuation and survey due diligence.
   </div>
 </div>
 
@@ -429,6 +467,7 @@ footer a:hover { color: var(--pk-white); }
     hide($('resultSection'));
     hide($('loadingA'));
     hide($('loadingB'));
+    hide($('comparatorCard'));
     clearError();
   }
 
@@ -472,12 +511,178 @@ footer a:hover { color: var(--pk-white); }
     return map[rating] || 'EPC rating found. Check compliance requirements for your intended use.';
   }
 
+  // ACT-633: current subject property context, needed if the investor
+  // enters an asking price after the initial lookup.
+  let currentSubject = null;
+
+  function fmtGBP(n) {
+    if (n === null || n === undefined || !isFinite(n)) return '—';
+    return '£' + Math.round(n).toLocaleString('en-GB');
+  }
+  function fmtGBPPerSqm(n) {
+    if (n === null || n === undefined || !isFinite(n)) return '—';
+    return '£' + Math.round(n).toLocaleString('en-GB') + '/m²';
+  }
+  function fmtDate(d) {
+    if (!d) return '—';
+    try {
+      return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return d; }
+  }
+
+  function renderComparator(comparables) {
+    const card = $('comparatorCard');
+    const body = $('comparatorBody');
+
+    if (!comparables || comparables.available === false) {
+      // Comparator unavailable or subject data insufficient — say so plainly,
+      // never as an error, and never block the EPC result above.
+      const reason = comparables && comparables.reason;
+      let msg = 'Sold-comparable evidence is not available for this property right now.';
+      if (reason === 'insufficient_subject_data') {
+        msg = 'Sold-comparable evidence requires a floor area from the EPC certificate. This property\'s EPC does not include one, so comparable evidence cannot be shown.';
+      } else if (reason === 'unmapped_property_type') {
+        msg = 'This property type could not be matched to a sold-comparable category, so evidence is not shown.';
+      } else if (reason === 'temporarily_unavailable') {
+        msg = 'Sold-comparable evidence is temporarily unavailable. The EPC result above is unaffected.';
+      }
+      body.innerHTML = `<p class="comparator-unavailable">${msg}</p>`;
+      show(card);
+      return;
+    }
+
+    const result = comparables.result;
+
+    if (!result || result.evidenceStrength === 'Insufficient' || (result.comparables || []).length < 3) {
+      body.innerHTML = `
+        <div class="comparator-insufficient">
+          <strong>Insufficient comparable evidence.</strong> Fewer than three usable sold comparables were found for this property, so no indicative value is shown.
+        </div>
+        <div class="comparator-disclosure">
+          Indicative comparable evidence only. This is not a formal valuation. HM Land Registry registrations may lag completion. Always undertake your own legal, financial, valuation and survey due diligence.
+        </div>`;
+      show(card);
+      return;
+    }
+
+    const strengthClass = (result.evidenceStrength || '').toLowerCase();
+    const geoLabel = result.geographyUsed || '—';
+    const windowLabel = result.timeWindowMonths ? `${result.timeWindowMonths} months` : '—';
+
+    const summaryItems = [
+      ['Evidence strength', result.evidenceStrength || '—'],
+      ['Selected comparables', String(result.selectedCount ?? result.comparables.length)],
+      ['Median sold £/m²', fmtGBPPerSqm(result.medianSoldPricePerSqm)],
+      ['Indicative value', fmtGBP(result.impliedValue)],
+      ['Indicative range', (result.impliedValueLow != null && result.impliedValueHigh != null)
+        ? `${fmtGBP(result.impliedValueLow)} – ${fmtGBP(result.impliedValueHigh)}` : '—'],
+      ['Search geography / window', `${geoLabel} · ${windowLabel}`],
+      ['Newest / oldest sale', `${fmtDate(result.newestSaleDate)} / ${fmtDate(result.oldestSaleDate)}`],
+    ];
+
+    const summaryHtml = summaryItems.map(([dt, dd]) =>
+      `<div class="meta-item"><dt>${dt}</dt><dd>${dd}</dd></div>`
+    ).join('');
+
+    const rows = (result.comparables || []).slice(0, 5).map(c => `
+      <tr>
+        <td>${c.address || '—'}</td>
+        <td>${fmtGBP(c.soldPrice)}</td>
+        <td>${fmtDate(c.soldDate)}</td>
+        <td>${c.floorAreaSqm != null ? c.floorAreaSqm + ' m²' : '—'}</td>
+        <td>${fmtGBPPerSqm(c.pricePerSqm)}</td>
+        <td>${c.matchConfidence || '—'}</td>
+      </tr>
+    `).join('');
+
+    const relaxationHtml = (result.relaxationNotes && result.relaxationNotes.length)
+      ? `<div class="comparator-relaxation-note">Search was widened to obtain sufficient evidence: ${result.relaxationNotes.join('; ')}.</div>`
+      : '';
+
+    const askingRowId = 'comparatorAskingRow';
+    const premiumHtml = (result.askingPricePerSqm != null || result.premiumDiscountPct != null)
+      ? `<span class="comparator-premium">${fmtGBPPerSqm(result.askingPricePerSqm)} asking £/m²${result.premiumDiscountPct != null ? ` · ${result.premiumDiscountPct > 0 ? '+' : ''}${result.premiumDiscountPct.toFixed(1)}% vs comparator median` : ''}</span>`
+      : '';
+
+    body.innerHTML = `
+      <span class="comparator-strength ${strengthClass}">${result.evidenceStrength} evidence</span>
+      <div class="comparator-summary-grid">${summaryHtml}</div>
+
+      <div class="comparator-asking-row" id="${askingRowId}">
+        <label for="askingPriceInput">Asking price (optional)</label>
+        <input type="number" id="askingPriceInput" class="comparator-asking-input" placeholder="e.g. 350000" min="0" step="1000">
+        <button id="askingPriceBtn" class="btn-secondary" type="button">Compare</button>
+        <span id="askingPriceResult">${premiumHtml}</span>
+      </div>
+
+      ${relaxationHtml}
+
+      <div class="comparables-table-wrap">
+        <table class="comparables-table">
+          <thead>
+            <tr>
+              <th>Address (HMLR)</th>
+              <th>Sold price</th>
+              <th>Sale date</th>
+              <th>Floor area</th>
+              <th>Sold £/m²</th>
+              <th>Match</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+
+      <div class="comparator-disclosure">
+        Indicative comparable evidence only. This is not a formal valuation. HM Land Registry registrations may lag completion. Always undertake your own legal, financial, valuation and survey due diligence.
+      </div>
+    `;
+
+    const askingBtn = $('askingPriceBtn');
+    if (askingBtn) {
+      askingBtn.addEventListener('click', doAskingPriceCompare);
+    }
+
+    show(card);
+  }
+
+  async function doAskingPriceCompare() {
+    if (!currentSubject) return;
+    const input = $('askingPriceInput');
+    const askingPrice = input ? parseFloat(input.value) : NaN;
+    if (!askingPrice || askingPrice <= 0) {
+      setError('Enter a valid asking price to compare.');
+      return;
+    }
+    clearError();
+
+    const btn = $('askingPriceBtn');
+    if (btn) btn.disabled = true;
+
+    try {
+      const data = await apiCall({
+        op: 'comparables',
+        postcode: currentSubject.postcode,
+        epcPropertyType: currentSubject.propertyType,
+        epcBuiltForm: currentSubject.builtForm,
+        floorAreaSqm: currentSubject.floorAreaSqm,
+        askingPrice
+      });
+      renderComparator(data.comparables);
+    } catch (err) {
+      setError('Could not compare asking price: ' + (err.message || 'Unknown error'));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function renderResult(cert, address) {
     const rating = cert.epcRating;
     if (cert.epcEvidenceStatus === 'Not found') {
       show($('resultSection'));
       showEl($('notFoundBox'));
       hideEl($('certResult'));
+      hide($('comparatorCard'));
       return;
     }
     hideEl($('notFoundBox'));
@@ -516,6 +721,14 @@ footer a:hover { color: var(--pk-white); }
     ).join('');
 
     show($('resultSection'));
+
+    // ACT-633: retain subject context for optional asking-price recalculation
+    currentSubject = {
+      postcode: cert.postcode || null,
+      propertyType: cert.propertyType || null,
+      builtForm: cert.builtForm || null,
+      floorAreaSqm: cert.floorAreaSqm != null ? cert.floorAreaSqm : null
+    };
   }
 
   async function doSearch() {
@@ -568,12 +781,18 @@ footer a:hover { color: var(--pk-white); }
 
   async function doLookup(certificateNumber, address) {
     hide($('addressSection'));
+    hide($('comparatorCard'));
     show($('loadingB'));
 
     try {
       const data = await apiCall({ op: 'certificate', certificateNumber });
       hide($('loadingB'));
       renderResult(data.certificate, address);
+      // ACT-633: comparator evidence renders independently of the EPC
+      // result — a comparator failure never hides or blocks the EPC card.
+      if (data.certificate && data.certificate.epcEvidenceStatus === 'Verified') {
+        renderComparator(data.comparables);
+      }
     } catch (err) {
       hide($('loadingB'));
       setError('Could not retrieve EPC certificate: ' + (err.message || 'Unknown error'));
