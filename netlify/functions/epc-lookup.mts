@@ -25,7 +25,43 @@ interface EpcCertificate {
   failureReason?: string;
   officialCertUrl: string;
   recommendations: string[];
+  // ACT-633: comparator enrichment fields
+  postcode?: string;
+  floorAreaSqm?: number | null;
+  builtForm?: string;
 }
+
+// ACT-633: comparator types
+interface ComparableSale {
+  address: string;
+  soldPrice: number;
+  soldDate: string;
+  floorAreaSqm: number | null;
+  pricePerSqm: number | null;
+  matchConfidence: string;
+}
+
+interface ComparatorResult {
+  evidenceStrength: "Strong" | "Moderate" | "Limited" | "Insufficient";
+  selectedCount: number;
+  evidenceCount: number;
+  medianSoldPricePerSqm: number | null;
+  impliedValue: number | null;
+  impliedValueLow: number | null;
+  impliedValueHigh: number | null;
+  askingPricePerSqm: number | null;
+  premiumDiscountPct: number | null;
+  newestSaleDate: string | null;
+  oldestSaleDate: string | null;
+  geographyUsed: string | null;
+  timeWindowMonths: number | null;
+  comparables: ComparableSale[];
+  relaxationNotes: string[];
+}
+
+type ComparatorAvailability =
+  | { available: true; result: ComparatorResult }
+  | { available: false; reason: "temporarily_unavailable" | "insufficient_subject_data" | "unmapped_property_type" };
 
 function isMockMode(token: string | undefined): boolean {
   return !token || token === "mock";
@@ -65,6 +101,9 @@ function getMockCertificate(certificateNumber: string): EpcCertificate {
       "Install a more efficient boiler",
       "Upgrade to double glazing",
     ],
+    postcode: "AL10 0FR",
+    floorAreaSqm: 82,
+    builtForm: "Mid-Terrace",
   };
 }
 
@@ -188,6 +227,15 @@ async function fetchCertificate(
     get("post_town", "postTown"),
   ].filter(Boolean);
 
+  // ACT-633: capture postcode, floor area and built form for comparator enrichment
+  const postcodeRaw = get("postcode");
+  const floorAreaRaw = get("total_floor_area", "totalFloorArea");
+  const floorAreaSqm =
+    floorAreaRaw !== undefined && floorAreaRaw !== null && floorAreaRaw !== ""
+      ? Number(floorAreaRaw)
+      : null;
+  const builtForm = get("built_form", "builtForm") ?? "";
+
   return {
     epcRating: get("current_energy_efficiency_band", "currentEnergyEfficiencyBand") ?? "Unknown",
     score: parseInt(get("current_energy_efficiency", "currentEnergyEfficiency")) || 0,
@@ -204,6 +252,9 @@ async function fetchCertificate(
     epcEvidenceStatus: "Verified",
     officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/${certificateNumber}`,
     recommendations: [],
+    postcode: postcodeRaw ?? undefined,
+    floorAreaSqm: Number.isFinite(floorAreaSqm as number) ? floorAreaSqm : null,
+    builtForm,
   };
 }
 
@@ -212,6 +263,74 @@ function rejectOutOfScope(postcode: string): boolean {
   // Northern Ireland: starts with BT
   const outOfScope = /^(BT|AB|DF|DG|EH|FK|G[0-9]|HS|IV|KA|KW|KY|ML|PA|PH|TD|ZE)/i;
   return outOfScope.test(postcode.trim());
+}
+
+// ACT-633: server-side comparator helper.
+// Calls the authenticated Supabase Edge Function; never exposes the Supabase
+// key or any HMLR/EPC database access to the browser. Comparator failure
+// must never break the underlying EPC lookup.
+async function fetchComparables(params: {
+  postcode?: string;
+  epcPropertyType?: string;
+  epcBuiltForm?: string;
+  floorAreaSqm?: number | null;
+  askingPrice?: number | null;
+}): Promise<ComparatorAvailability> {
+  const supabaseUrl = Netlify.env.get("PK_COMPARATOR_SUPABASE_URL");
+  const supabaseAnonKey = Netlify.env.get("PK_COMPARATOR_SUPABASE_ANON_KEY");
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { available: false, reason: "temporarily_unavailable" };
+  }
+
+  const postcode = (params.postcode ?? "").trim();
+  const floorArea = params.floorAreaSqm;
+
+  if (!postcode || !floorArea || floorArea <= 0) {
+    return { available: false, reason: "insufficient_subject_data" };
+  }
+
+  if (!params.epcPropertyType) {
+    return { available: false, reason: "unmapped_property_type" };
+  }
+
+  try {
+    const res = await fetchWithRetry(
+      `${supabaseUrl}/functions/v1/property-comparables`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: supabaseAnonKey,
+        },
+        body: JSON.stringify({
+          postcode,
+          epc_property_type: params.epcPropertyType,
+          epc_built_form: params.epcBuiltForm ?? null,
+          floor_area_sqm: floorArea,
+          asking_price: params.askingPrice ?? null,
+          target_count: 5,
+        }),
+      },
+      2 // comparator failures must not hold up the EPC result; fewer retries
+    );
+
+    if (!res.ok) {
+      return { available: false, reason: "temporarily_unavailable" };
+    }
+
+    const json = await res.json();
+    if (!json || typeof json !== "object" || !json.result) {
+      return { available: false, reason: "temporarily_unavailable" };
+    }
+
+    return { available: true, result: json.result as ComparatorResult };
+  } catch {
+    // Never let a comparator failure surface database errors, stack traces
+    // or connectivity details to the client.
+    return { available: false, reason: "temporarily_unavailable" };
+  }
 }
 
 export default async function handler(
@@ -228,7 +347,12 @@ export default async function handler(
   const token = Netlify.env.get("EPC_API_TOKEN");
   const mock = isMockMode(token);
 
-  let body: { op: string; postcode?: string; certificateNumber: string };
+  let body: {
+    op: string;
+    postcode?: string;
+    certificateNumber: string;
+    askingPrice?: number;
+  };
   try {
     body = await req.json();
   } catch {
@@ -281,7 +405,60 @@ export default async function handler(
         ? getMockCertificate(certificateNumber)
         : await fetchCertificate(certificateNumber, token!);
 
-      return new Response(JSON.stringify({ certificate: cert, mock }), {
+      // ACT-633: attach comparator evidence. A comparator failure must never
+      // break the EPC result — always return the EPC data; comparables is
+      // its own independent, gracefully-degrading field.
+      let comparables: ComparatorAvailability = {
+        available: false,
+        reason: "insufficient_subject_data",
+      };
+
+      if (cert.epcEvidenceStatus === "Verified") {
+        const epcPropertyType = mapEpcPropertyTypeToHmlr(cert.propertyType);
+        comparables = await fetchComparables({
+          postcode: cert.postcode,
+          epcPropertyType,
+          epcBuiltForm: cert.builtForm,
+          floorAreaSqm: cert.floorAreaSqm ?? null,
+          askingPrice: null,
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ certificate: cert, comparables, mock }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // ACT-633: optional standalone asking-price recalculation. Never calls
+    // Supabase from the browser — always routes through this server function.
+    if (body.op === "comparables") {
+      const postcode = (body.postcode ?? "").trim();
+      const askingPrice =
+        typeof body.askingPrice === "number" && body.askingPrice > 0
+          ? body.askingPrice
+          : null;
+
+      // These fields are supplied by the frontend from the already-fetched
+      // certificate response, not re-derived from EPC address data.
+      const epcPropertyType = (body as any).epcPropertyType as string | undefined;
+      const epcBuiltForm = (body as any).epcBuiltForm as string | undefined;
+      const floorAreaSqm = (body as any).floorAreaSqm as number | undefined;
+
+      const comparables = await fetchComparables({
+        postcode,
+        epcPropertyType: epcPropertyType
+          ? mapEpcPropertyTypeToHmlr(epcPropertyType)
+          : undefined,
+        epcBuiltForm,
+        floorAreaSqm: floorAreaSqm ?? null,
+        askingPrice,
+      });
+
+      return new Response(JSON.stringify({ comparables }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -298,4 +475,16 @@ export default async function handler(
       headers: { "Content-Type": "application/json" },
     });
   }
+}
+
+// ACT-633: map EPC-native property type + built form to HMLR D/S/T/F/O.
+// Mapping logic stays server-side only, per the governing spec.
+function mapEpcPropertyTypeToHmlr(epcPropertyType: string | undefined): string | undefined {
+  if (!epcPropertyType) return undefined;
+  const t = epcPropertyType.trim().toLowerCase();
+  if (t.includes("flat") || t.includes("maisonette")) return "F";
+  if (t.includes("detached") && !t.includes("semi")) return "D";
+  if (t.includes("semi-detached") || t.includes("semi detached")) return "S";
+  if (t.includes("terrace")) return "T";
+  return undefined; // unmapped types are excluded from the comparator, not guessed
 }
