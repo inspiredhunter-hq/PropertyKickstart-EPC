@@ -552,8 +552,14 @@ footer a:hover { color: var(--pk-white); }
     }
 
     const result = comparables.result;
+    const market = (result && result.market) || {};
+    const selection = (result && result.selection) || {};
+    const subject = (result && result.subject) || {};
+    const rowsData = (result && result.comparables) || [];
 
-    if (!result || result.evidenceStrength === 'Insufficient' || (result.comparables || []).length < 3) {
+    // ACT-643 fix: backend evidence-strength values are lowercase
+    // ('strong' | 'moderate' | 'limited' | 'insufficient_evidence'), not 'Insufficient'.
+    if (!result || result.status === 'insufficient_evidence' || rowsData.length < 3) {
       body.innerHTML = `
         <div class="comparator-insufficient">
           <strong>Insufficient comparable evidence.</strong> Fewer than three usable sold comparables were found for this property, so no indicative value is shown.
@@ -565,47 +571,58 @@ footer a:hover { color: var(--pk-white); }
       return;
     }
 
-    const strengthClass = (result.evidenceStrength || '').toLowerCase();
-    const geoLabel = result.geographyUsed || '—';
-    const windowLabel = result.timeWindowMonths ? `${result.timeWindowMonths} months` : '—';
+    const evidenceStrengthLabel = (result.status || '').charAt(0).toUpperCase() + (result.status || '').slice(1);
+    const strengthClass = (result.status || '').toLowerCase();
+    const geoLabel = selection.geo_scope ? selection.geo_scope.replace(/_/g, ' ') : '—';
+    const windowLabel = selection.months_window ? `${selection.months_window} months` : '—';
 
     const summaryItems = [
-      ['Evidence strength', result.evidenceStrength || '—'],
-      ['Selected comparables', String(result.selectedCount ?? result.comparables.length)],
-      ['Median sold £/m²', fmtGBPPerSqm(result.medianSoldPricePerSqm)],
-      ['Indicative value', fmtGBP(result.impliedValue)],
-      ['Indicative range', (result.impliedValueLow != null && result.impliedValueHigh != null)
-        ? `${fmtGBP(result.impliedValueLow)} – ${fmtGBP(result.impliedValueHigh)}` : '—'],
+      ['Evidence strength', evidenceStrengthLabel || '—'],
+      ['Selected comparables', String(result.selected_count ?? rowsData.length)],
+      ['Median sold £/m²', fmtGBPPerSqm(market.median_sold_price_per_sqm)],
+      ['Indicative value', fmtGBP(market.implied_value)],
+      ['Indicative range', (market.implied_value_low != null && market.implied_value_high != null)
+        ? `${fmtGBP(market.implied_value_low)} – ${fmtGBP(market.implied_value_high)}` : '—'],
       ['Search geography / window', `${geoLabel} · ${windowLabel}`],
-      ['Newest / oldest sale', `${fmtDate(result.newestSaleDate)} / ${fmtDate(result.oldestSaleDate)}`],
+      ['Newest / oldest sale', `${fmtDate(market.newest_comparable_sale)} / ${fmtDate(market.oldest_comparable_sale)}`],
     ];
 
     const summaryHtml = summaryItems.map(([dt, dd]) =>
       `<div class="meta-item"><dt>${dt}</dt><dd>${dd}</dd></div>`
     ).join('');
 
-    const rows = (result.comparables || []).slice(0, 5).map(c => `
+    // ACT-643 fix: HMLR comparable rows carry paon/saon/street/town_city
+    // (address must be assembled), sold_price, sold_date, floor_area_sqm,
+    // price_per_sqm and match_class — not the camelCase names this used to read.
+    // transaction_id and similarity_score are internal and must never render.
+    const rows = rowsData.slice(0, 5).map(c => {
+      const addressParts = [c.saon, c.paon, c.street, c.town_city].filter(Boolean);
+      const address = addressParts.length ? addressParts.join(', ') : '—';
+      return `
       <tr>
-        <td>${c.address || '—'}</td>
-        <td>${fmtGBP(c.soldPrice)}</td>
-        <td>${fmtDate(c.soldDate)}</td>
-        <td>${c.floorAreaSqm != null ? c.floorAreaSqm + ' m²' : '—'}</td>
-        <td>${fmtGBPPerSqm(c.pricePerSqm)}</td>
-        <td>${c.matchConfidence || '—'}</td>
+        <td>${address}</td>
+        <td>${fmtGBP(c.sold_price)}</td>
+        <td>${fmtDate(c.sold_date)}</td>
+        <td>${c.floor_area_sqm != null ? c.floor_area_sqm + ' m²' : '—'}</td>
+        <td>${fmtGBPPerSqm(c.price_per_sqm)}</td>
+        <td>${c.match_class || '—'}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
-    const relaxationHtml = (result.relaxationNotes && result.relaxationNotes.length)
-      ? `<div class="comparator-relaxation-note">Search was widened to obtain sufficient evidence: ${result.relaxationNotes.join('; ')}.</div>`
+    // ACT-643 fix: no relaxationNotes field exists on the backend response yet;
+    // show the effective search scope actually used instead of a notes array.
+    const relaxationHtml = (selection.same_old_new_enforced === false)
+      ? `<div class="comparator-relaxation-note">Search was widened to obtain sufficient evidence (same new-build/established status not enforced).</div>`
       : '';
 
     const askingRowId = 'comparatorAskingRow';
-    const premiumHtml = (result.askingPricePerSqm != null || result.premiumDiscountPct != null)
-      ? `<span class="comparator-premium">${fmtGBPPerSqm(result.askingPricePerSqm)} asking £/m²${result.premiumDiscountPct != null ? ` · ${result.premiumDiscountPct > 0 ? '+' : ''}${result.premiumDiscountPct.toFixed(1)}% vs comparator median` : ''}</span>`
+    const premiumHtml = (subject.asking_price_per_sqm != null || market.asking_premium_discount_pct != null)
+      ? `<span class="comparator-premium">${fmtGBPPerSqm(subject.asking_price_per_sqm)} asking £/m²${market.asking_premium_discount_pct != null ? ` · ${market.asking_premium_discount_pct > 0 ? '+' : ''}${market.asking_premium_discount_pct.toFixed(1)}% vs comparator median` : ''}</span>`
       : '';
 
     body.innerHTML = `
-      <span class="comparator-strength ${strengthClass}">${result.evidenceStrength} evidence</span>
+      <span class="comparator-strength ${strengthClass}">${evidenceStrengthLabel} evidence</span>
       <div class="comparator-summary-grid">${summaryHtml}</div>
 
       <div class="comparator-asking-row" id="${askingRowId}">
