@@ -306,8 +306,20 @@ async function fetchComparables(params: {
         },
         body: JSON.stringify({
           postcode,
-          epc_property_type: params.epcPropertyType,
-          epc_built_form: params.epcBuiltForm ?? null,
+          // ACT-633/ACT-642: send the already-resolved HMLR D/S/T/F code as
+          // `property_type` (the Edge Function uses this directly and skips
+          // its own epc_property_type/epc_built_form mapping when present).
+          // The Edge Function's own mapper expects EPC-native TEXT labels
+          // for epc_property_type/epc_built_form ("House", "Semi-Detached",
+          // etc.), not the raw numeric codes the live EPC API returns — so
+          // sending those numeric codes through as epc_property_type /
+          // epc_built_form fails there with 422 property_type_unresolved.
+          // Since mapEpcPropertyTypeToHmlr() has already done the numeric
+          // resolution correctly on this side, `property_type` is the only
+          // field that needs to travel; the epc_* fields are omitted to
+          // avoid ever falling back into the Edge Function's own mapper
+          // with values it cannot interpret.
+          property_type: params.epcPropertyType,
           floor_area_sqm: floorArea,
           asking_price: params.askingPrice ?? null,
           target_count: 5,
