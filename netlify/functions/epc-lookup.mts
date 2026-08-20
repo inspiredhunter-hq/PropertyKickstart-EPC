@@ -27,8 +27,13 @@ interface EpcCertificate {
   recommendations: string[];
 }
 
-function isMockMode(token: string | undefined): boolean {
-  return !token || token === "mock";
+function isMockMode(token: string | undefined, email: string | undefined): boolean {
+  return !token || token === "mock" || !email;
+}
+
+function buildAuthHeader(email: string, apiKey: string): string {
+  const encoded = Buffer.from(`${email}:${apiKey}`).toString("base64");
+  return `Basic ${encoded}`;
 }
 
 function getMockAddresses(postcode: string): SearchResult[] {
@@ -86,12 +91,13 @@ async function fetchWithRetry(
 
 async function searchAddresses(
   postcode: string,
-  token: string
+  email: string,
+  apiKey: string
 ): Promise<SearchResult[]> {
   const url = `${EPC_API_BASE}/domestic/search?postcode=${encodeURIComponent(postcode)}&size=20`;
   const res = await fetchWithRetry(url, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: buildAuthHeader(email, apiKey),
       Accept: "application/json",
     },
   });
@@ -125,12 +131,13 @@ async function searchAddresses(
 
 async function fetchCertificate(
   uprn: string,
-  token: string
+  email: string,
+  apiKey: string
 ): Promise<EpcCertificate> {
   const url = `${EPC_API_BASE}/domestic/uprn/${encodeURIComponent(uprn)}`;
   const res = await fetchWithRetry(url, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: buildAuthHeader(email, apiKey),
       Accept: "application/json",
     },
   });
@@ -217,7 +224,8 @@ export default async function handler(
   }
 
   const token = Netlify.env.get("EPC_API_TOKEN");
-  const mock = isMockMode(token);
+  const email = Netlify.env.get("EPC_API_EMAIL");
+  const mock = isMockMode(token, email);
 
   let body: { op: string; postcode?: string; uprn: string };
   try {
@@ -251,7 +259,7 @@ export default async function handler(
 
       const results = mock
         ? getMockAddresses(postcode)
-        : await searchAddresses(postcode, token!);
+        : await searchAddresses(postcode, email!, token!);
 
       return new Response(JSON.stringify({ addresses: results, mock }), {
         status: 200,
@@ -270,7 +278,7 @@ export default async function handler(
 
       const cert = mock
         ? getMockCertificate(uprn)
-        : await fetchCertificate(uprn, token!);
+        : await fetchCertificate(uprn, email!, token!);
 
       return new Response(JSON.stringify({ certificate: cert, mock }), {
         status: 200,
