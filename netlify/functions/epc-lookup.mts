@@ -244,7 +244,7 @@ async function fetchCertificate(
     certDate: regDate,
     expiryDate,
     certNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
-    propertyType: get("property_type", "propertyType") ?? "",
+    propertyType: String(get("property_type", "propertyType") ?? ""),
     address: addressParts.join(", "),
     certificateNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
     lookupTimestamp: new Date().toISOString(),
@@ -480,7 +480,7 @@ export default async function handler(
 // ACT-633: map EPC-native property type + built form to HMLR D/S/T/F/O.
 // Mapping logic stays server-side only, per the governing spec.
 function mapEpcPropertyTypeToHmlr(epcPropertyType: string | undefined): string | undefined {
-  if (!epcPropertyType) return undefined;
+  if (!epcPropertyType || typeof epcPropertyType !== "string") return undefined;
   const t = epcPropertyType.trim().toLowerCase();
   if (t.includes("flat") || t.includes("maisonette")) return "F";
   if (t.includes("detached") && !t.includes("semi")) return "D";
