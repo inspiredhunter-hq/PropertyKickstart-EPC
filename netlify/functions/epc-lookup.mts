@@ -414,7 +414,7 @@ export default async function handler(
       };
 
       if (cert.epcEvidenceStatus === "Verified") {
-        const epcPropertyType = mapEpcPropertyTypeToHmlr(cert.propertyType);
+        const epcPropertyType = mapEpcPropertyTypeToHmlr(cert.propertyType, cert.builtForm);
         comparables = await fetchComparables({
           postcode: cert.postcode,
           epcPropertyType,
@@ -451,7 +451,7 @@ export default async function handler(
       const comparables = await fetchComparables({
         postcode,
         epcPropertyType: epcPropertyType
-          ? mapEpcPropertyTypeToHmlr(epcPropertyType)
+          ? mapEpcPropertyTypeToHmlr(epcPropertyType, epcBuiltForm)
           : undefined,
         epcBuiltForm,
         floorAreaSqm: floorAreaSqm ?? null,
@@ -477,11 +477,72 @@ export default async function handler(
   }
 }
 
-// ACT-633: map EPC-native property type + built form to HMLR D/S/T/F/O.
+// ACT-633: map EPC-native property_type + built_form to HMLR D/S/T/F/O.
 // Mapping logic stays server-side only, per the governing spec.
-function mapEpcPropertyTypeToHmlr(epcPropertyType: string | undefined): string | undefined {
-  if (!epcPropertyType || typeof epcPropertyType !== "string") return undefined;
-  const t = epcPropertyType.trim().toLowerCase();
+//
+// The live MHCLG EPC API (api.get-energy-performance-data.communities.gov.uk)
+// returns property_type and built_form as NUMERIC CODES, not string labels,
+// despite official RdSAP documentation describing them as text. No official
+// numeric dictionary exists for built_form (confirmed absent from the GOV.UK
+// EPC Statistics data dictionary and glossary — see ACT-633/ACT-641).
+//
+// property_type IS officially documented (GOV.UK EPC Statistics data
+// dictionary, EPC_Statistics_data_dictionary.ods):
+//   0 = House, 1 = Bungalow, 2 = Flat, 3 = Maisonette, 4 = Park home
+//
+// built_form is EMPIRICALLY DERIVED (ACT-633/ACT-642) by cross-referencing
+// live certificate responses against each property's own official
+// find-energy-certificate.service.gov.uk page, houses/bungalows only
+// (flats' "Property type" field on gov.uk shows floor position, not true
+// built form, so it cannot be used as ground truth for built_form):
+//   1 = Detached, 2 = Semi-detached, 3 = End-terrace, 4 = Mid-terrace
+// Enclosed end-terrace / enclosed mid-terrace (rare RdSAP variants) were
+// not encountered in the sample and are intentionally left unmapped rather
+// than guessed — properties with those built_form codes fall through to
+// "unmapped_property_type" and are excluded from the comparator, same as
+// any other genuinely unknown value.
+const EPC_PROPERTY_TYPE_CODE: Record<string, "house" | "bungalow" | "flat" | "maisonette" | "park_home"> = {
+  "0": "house",
+  "1": "bungalow",
+  "2": "flat",
+  "3": "maisonette",
+  "4": "park_home",
+};
+
+// Empirically derived (ACT-633/ACT-642) — see comment above. Only codes
+// confirmed against an official gov.uk certificate page are included.
+const EPC_BUILT_FORM_CODE: Record<string, "D" | "S" | "T"> = {
+  "1": "D", // Detached
+  "2": "S", // Semi-detached
+  "3": "T", // End-terrace
+  "4": "T", // Mid-terrace
+};
+
+function mapEpcPropertyTypeToHmlr(
+  epcPropertyType: string | undefined,
+  epcBuiltForm?: string | number | undefined
+): string | undefined {
+  if (epcPropertyType === undefined || epcPropertyType === null) return undefined;
+  const rawType = String(epcPropertyType).trim();
+  if (!rawType) return undefined;
+
+  // Numeric-code path — the live API's actual contract.
+  if (/^\d+$/.test(rawType)) {
+    const kind = EPC_PROPERTY_TYPE_CODE[rawType];
+    if (!kind) return undefined; // unrecognised code — do not guess
+
+    if (kind === "flat" || kind === "maisonette") return "F";
+    if (kind === "park_home") return undefined; // no defensible HMLR equivalent
+
+    // house or bungalow: shape comes from built_form
+    const rawBuiltForm = epcBuiltForm === undefined || epcBuiltForm === null ? "" : String(epcBuiltForm).trim();
+    const hmlrShape = EPC_BUILT_FORM_CODE[rawBuiltForm];
+    return hmlrShape; // undefined (not guessed) if built_form is missing/unrecognised
+  }
+
+  // Fallback: string-label path, retained in case the API ever reverts to
+  // (or a future version restores) text labels as originally specified.
+  const t = rawType.toLowerCase();
   if (t.includes("flat") || t.includes("maisonette")) return "F";
   if (t.includes("detached") && !t.includes("semi")) return "D";
   if (t.includes("semi-detached") || t.includes("semi detached")) return "S";
