@@ -549,7 +549,7 @@ footer a:hover { color: var(--pk-white); }
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = addr.address;
-        btn.addEventListener('click', () => doLookup(addr.uprn, addr.address));
+        btn.addEventListener('click', () => doLookup(addr.certificateNumber, addr.address));
         li.appendChild(btn);
         list.appendChild(li);
       });
@@ -566,12 +566,12 @@ footer a:hover { color: var(--pk-white); }
     }
   }
 
-  async function doLookup(uprn, address) {
+  async function doLookup(certificateNumber, address) {
     hide($('addressSection'));
     show($('loadingB'));
 
     try {
-      const data = await apiCall({ op: 'certificate', uprn });
+      const data = await apiCall({ op: 'certificate', certificateNumber });
       hide($('loadingB'));
       renderResult(data.certificate, address);
     } catch (err) {
