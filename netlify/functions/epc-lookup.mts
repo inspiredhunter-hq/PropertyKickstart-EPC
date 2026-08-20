@@ -1,10 +1,10 @@
 import type { Context } from "@netlify/functions";
 
-const EPC_API_BASE = "https://epc.opendatacommunities.org/api/v1";
+const EPC_API_BASE = "https://api.get-energy-performance-data.communities.gov.uk";
 
 interface SearchResult {
   address: string;
-  uprn: string;
+  certificateNumber: string;
   postcode: string;
 }
 
@@ -18,7 +18,7 @@ interface EpcCertificate {
   certNumber: string;
   propertyType: string;
   address: string;
-  uprn: string;
+  certificateNumber: string;
   lookupTimestamp: string;
   source: string;
   epcEvidenceStatus: "Verified" | "Not found" | "Not checked";
@@ -27,27 +27,22 @@ interface EpcCertificate {
   recommendations: string[];
 }
 
-function isMockMode(token: string | undefined, email: string | undefined): boolean {
-  return !token || token === "mock" || !email;
-}
-
-function buildAuthHeader(email: string, apiKey: string): string {
-  const encoded = Buffer.from(`${email}:${apiKey}`).toString("base64");
-  return `Basic ${encoded}`;
+function isMockMode(token: string | undefined): boolean {
+  return !token || token === "mock";
 }
 
 function getMockAddresses(postcode: string): SearchResult[] {
   const pc = postcode.toUpperCase().replace(/\s+/g, " ");
   return [
-    { address: `Flat 1, 12 Example Street, ${pc}`, uprn: "100012345671", postcode: pc },
-    { address: `Flat 2, 12 Example Street, ${pc}`, uprn: "100012345672", postcode: pc },
-    { address: `14 Example Street, ${pc}`, uprn: "100012345673", postcode: pc },
+    { address: `Flat 1, 12 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0001", postcode: pc },
+    { address: `Flat 2, 12 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0002", postcode: pc },
+    { address: `14 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0003", postcode: pc },
   ];
 }
 
-function getMockCertificate(uprn: string): EpcCertificate {
+function getMockCertificate(certificateNumber: string): EpcCertificate {
   const ratings = ["A", "B", "C", "D", "E", "F", "G"];
-  const idx = parseInt(uprn.slice(-1)) % ratings.length;
+  const idx = parseInt(certificateNumber.slice(-1)) % ratings.length;
   const rating = ratings[idx];
   const scores: Record<string, number> = { A: 92, B: 82, C: 72, D: 60, E: 45, F: 30, G: 15 };
   return {
@@ -57,14 +52,14 @@ function getMockCertificate(uprn: string): EpcCertificate {
     potentialScore: Math.min(100, (scores[rating] || 60) + 12),
     certDate: "2022-06-15",
     expiryDate: "2032-06-14",
-    certNumber: `0000-0000-0000-${uprn.slice(-4)}-0000`,
+    certNumber: certificateNumber,
     propertyType: "Flat",
-    address: `Mock Property, ${uprn}`,
-    uprn,
+    address: `Mock Property, ${certificateNumber}`,
+    certificateNumber,
     lookupTimestamp: new Date().toISOString(),
     source: "mock",
     epcEvidenceStatus: "Verified",
-    officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/0000-0000-0000-${uprn.slice(-4)}-0000`,
+    officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/${certificateNumber}`,
     recommendations: [
       "Add loft insulation",
       "Install a more efficient boiler",
@@ -91,53 +86,51 @@ async function fetchWithRetry(
 
 async function searchAddresses(
   postcode: string,
-  email: string,
-  apiKey: string
+  token: string
 ): Promise<SearchResult[]> {
-  const url = `${EPC_API_BASE}/domestic/search?postcode=${encodeURIComponent(postcode)}&size=20`;
+  const url = `${EPC_API_BASE}/api/domestic/search?postcode=${encodeURIComponent(postcode)}&page_size=20`;
   const res = await fetchWithRetry(url, {
     headers: {
-      Authorization: buildAuthHeader(email, apiKey),
+      Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
   });
+
+  if (res.status === 404) {
+    return [];
+  }
 
   if (!res.ok) {
     throw new Error(`EPC API error: ${res.status}`);
   }
 
-  const data = await res.json();
-  const rows: SearchResult[] = [];
+  const json = await res.json();
+  const rows = json?.data ?? [];
 
-  for (const row of data?.rows ?? []) {
-    const cols = data.column_names ?? [];
-    const get = (name: string) => row[cols.indexOf(name)] ?? "";
-    rows.push({
-      address: [
-        get("address1"),
-        get("address2"),
-        get("address3"),
-        get("posttown"),
-      ]
-        .filter(Boolean)
-        .join(", "),
-      uprn: get("uprn"),
-      postcode: get("postcode"),
-    });
-  }
-
-  return rows;
+  return rows.map((row: any) => {
+    const addressParts = [
+      row.addressLine1,
+      row.addressLine2,
+      row.addressLine3,
+      row.addressLine4,
+      row.postTown,
+    ].filter(Boolean);
+    return {
+      address: addressParts.join(", "),
+      certificateNumber: row.certificateNumber,
+      postcode: row.postcode ?? postcode,
+    };
+  });
 }
 
 async function fetchCertificate(
-  uprn: string,
-  email: string,
-  apiKey: string
+  certificateNumber: string,
+  token: string
 ): Promise<EpcCertificate> {
-  const url = `${EPC_API_BASE}/domestic/uprn/${encodeURIComponent(uprn)}`;
+  const url = `${EPC_API_BASE}/api/certificate?certificate_number=${encodeURIComponent(certificateNumber)}`;
   const res = await fetchWithRetry(url, {
     headers: {
-      Authorization: buildAuthHeader(email, apiKey),
+      Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
   });
@@ -153,7 +146,7 @@ async function fetchCertificate(
       certNumber: "",
       propertyType: "",
       address: "",
-      uprn,
+      certificateNumber,
       lookupTimestamp: new Date().toISOString(),
       source: "live",
       epcEvidenceStatus: "Not found",
@@ -167,40 +160,49 @@ async function fetchCertificate(
     throw new Error(`EPC API error: ${res.status}`);
   }
 
-  const data = await res.json();
-  const row = data?.rows?.[0];
-  if (!row) throw new Error("No data returned from EPC API");
+  const json = await res.json();
+  const d = json?.data;
+  if (!d) throw new Error("No data returned from EPC API");
 
-  const cols = data.column_names ?? [];
-  const get = (name: string) => row[cols.indexOf(name)] ?? "";
+  const get = (...keys: string[]) => {
+    for (const k of keys) {
+      if (d[k] !== undefined && d[k] !== null) return d[k];
+    }
+    return undefined;
+  };
 
-  const certNumber = get("lmk-key");
+  const regDate = get("registration_date", "lodgement_date") ?? "";
+  const explicitExpiry = get("expiry_date");
+  const expiryDate = explicitExpiry
+    ? String(explicitExpiry).slice(0, 10)
+    : regDate
+    ? new Date(new Date(regDate).getTime() + 10 * 365.25 * 24 * 3600 * 1000)
+        .toISOString()
+        .slice(0, 10)
+    : "";
+
+  const addressParts = [
+    get("address_line_1", "addressLine1"),
+    get("address_line_2", "addressLine2"),
+    get("address_line_3", "addressLine3"),
+    get("post_town", "postTown"),
+  ].filter(Boolean);
+
   return {
-    epcRating: get("current-energy-rating"),
-    score: parseInt(get("current-energy-efficiency")) || 0,
-    potentialRating: get("potential-energy-rating"),
-    potentialScore: parseInt(get("potential-energy-efficiency")) || 0,
-    certDate: get("lodgement-date"),
-    expiryDate: get("lodgement-date")
-      ? new Date(
-          new Date(get("lodgement-date")).getTime() +
-            10 * 365.25 * 24 * 3600 * 1000
-        )
-          .toISOString()
-          .slice(0, 10)
-      : "",
-    certNumber,
-    propertyType: get("property-type"),
-    address: [get("address1"), get("address2"), get("address3"), get("posttown")]
-      .filter(Boolean)
-      .join(", "),
-    uprn,
+    epcRating: get("current_energy_efficiency_band", "currentEnergyEfficiencyBand") ?? "Unknown",
+    score: parseInt(get("current_energy_efficiency", "currentEnergyEfficiency")) || 0,
+    potentialRating: get("potential_energy_efficiency_band", "potentialEnergyEfficiencyBand") ?? "Unknown",
+    potentialScore: parseInt(get("potential_energy_efficiency", "potentialEnergyEfficiency")) || 0,
+    certDate: regDate,
+    expiryDate,
+    certNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
+    propertyType: get("property_type", "propertyType") ?? "",
+    address: addressParts.join(", "),
+    certificateNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
     lookupTimestamp: new Date().toISOString(),
     source: "live",
     epcEvidenceStatus: "Verified",
-    officialCertUrl: certNumber
-      ? `https://find-energy-certificate.service.gov.uk/energy-certificate/${certNumber}`
-      : "",
+    officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/${certificateNumber}`,
     recommendations: [],
   };
 }
@@ -224,10 +226,9 @@ export default async function handler(
   }
 
   const token = Netlify.env.get("EPC_API_TOKEN");
-  const email = Netlify.env.get("EPC_API_EMAIL");
-  const mock = isMockMode(token, email);
+  const mock = isMockMode(token);
 
-  let body: { op: string; postcode?: string; uprn: string };
+  let body: { op: string; postcode?: string; certificateNumber: string };
   try {
     body = await req.json();
   } catch {
@@ -259,7 +260,7 @@ export default async function handler(
 
       const results = mock
         ? getMockAddresses(postcode)
-        : await searchAddresses(postcode, email!, token!);
+        : await searchAddresses(postcode, token!);
 
       return new Response(JSON.stringify({ addresses: results, mock }), {
         status: 200,
@@ -268,17 +269,17 @@ export default async function handler(
     }
 
     if (body.op === "certificate") {
-      const uprn = (body.uprn ?? "").trim();
-      if (!uprn) {
+      const certificateNumber = (body.certificateNumber ?? "").trim();
+      if (!certificateNumber) {
         return new Response(
-          JSON.stringify({ error: "uprn is required" }),
+          JSON.stringify({ error: "certificateNumber is required" }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
       const cert = mock
-        ? getMockCertificate(uprn)
-        : await fetchCertificate(uprn, email!, token!);
+        ? getMockCertificate(certificateNumber)
+        : await fetchCertificate(certificateNumber, token!);
 
       return new Response(JSON.stringify({ certificate: cert, mock }), {
         status: 200,
