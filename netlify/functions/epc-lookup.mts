@@ -269,7 +269,7 @@ export default async function handler(
       }
 
       const cert = mock
-        ? getMockCertificate(uprn)]
+        ? getMockCertificate(uprn)
         : await fetchCertificate(uprn, token!);
 
       return new Response(JSON.stringify({ certificate: cert, mock }), {
