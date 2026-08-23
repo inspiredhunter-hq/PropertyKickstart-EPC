@@ -498,6 +498,30 @@ footer a:hover { color: var(--pk-white); }
     });
   }
 
+  // ACT-645: map numeric property type codes from EPC API to human-readable labels
+  function mapPropertyTypeCode(code) {
+    const propertyTypeMap = {
+      '0': 'House',
+      '1': 'Bungalow',
+      '2': 'Flat',
+      '3': 'Maisonette',
+      '4': 'Park home'
+    };
+    // Handle both string and numeric codes; if code is not in map, return original
+    return propertyTypeMap[String(code)] || code;
+  }
+
+  // ACT-645: map numeric built form codes to human-readable labels
+  function mapBuiltFormCode(code) {
+    const builtFormMap = {
+      '1': 'Detached',
+      '2': 'Semi-detached',
+      '3': 'End-terrace',
+      '4': 'Mid-terrace'
+    };
+    return builtFormMap[String(code)] || code;
+  }
+
   function investorText(rating) {
     const map = {
       A: 'Excellent — A-rated properties command premium rents and sale prices. Minimal EPC-related risk for investors.',
@@ -730,7 +754,7 @@ footer a:hover { color: var(--pk-white); }
     const items = [
       ['Current rating', rating + ' (' + cert.score + '/100)'],
       ['Potential rating', cert.potentialRating + ' (' + cert.potentialScore + '/100)'],
-      ['Property type', cert.propertyType || '—'],
+      ['Property type', cert.propertyType ? mapPropertyTypeCode(cert.propertyType) : '—'],
       ['Certificate no.', cert.certNumber ? cert.certNumber.slice(0,20)+'…' : '—'],
     ];
     grid.innerHTML = items.map(([dt,dd]) =>
