@@ -748,6 +748,34 @@ footer a:hover { color: var(--pk-white); }
     };
   }
 
+  function normalisePostcode(pc) {
+    if (!pc) return '';
+    return pc.trim().toUpperCase().replace(/\s+/g, ' ');
+  }
+
+  function updateUrlWithPostcode(postcode) {
+    const normalised = normalisePostcode(postcode);
+    if (!normalised) {
+      window.history.replaceState({}, '', window.location.pathname);
+    } else {
+      const url = new URL(window.location);
+      url.searchParams.set('postcode', normalised);
+      window.history.replaceState({}, '', url);
+    }
+  }
+
+  function clearPostcodeFromUrl() {
+    const url = new URL(window.location);
+    url.searchParams.delete('postcode');
+    window.history.replaceState({}, '', url);
+  }
+
+  function getPostcodeFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const pc = params.get('postcode');
+    return pc ? normalisePostcode(pc) : '';
+  }
+
   async function doSearch() {
     const postcode = $('postcodeInput').value.trim().toUpperCase();
     if (!postcode) { setError('Please enter a postcode.'); return; }
@@ -769,6 +797,9 @@ footer a:hover { color: var(--pk-white); }
         setError('No properties found for that postcode. Please check and try again.');
         return;
       }
+
+      // ACT-684: update URL with the normalised postcode after successful search
+      updateUrlWithPostcode(postcode);
 
       const section = $('addressSection');
       $('addressCount').textContent = `${addresses.length} propert${addresses.length === 1 ? 'y' : 'ies'} found — select one to check its EPC`;
@@ -821,8 +852,19 @@ footer a:hover { color: var(--pk-white); }
   $('newSearchBtn').addEventListener('click', () => {
     reset();
     $('postcodeInput').value = '';
+    clearPostcodeFromUrl();
     $('postcodeInput').focus();
   });
+
+  // ACT-684: on page load, check for postcode query parameter and auto-populate/search
+  (function initDeepLink() {
+    const urlPostcode = getPostcodeFromUrl();
+    if (urlPostcode) {
+      $('postcodeInput').value = urlPostcode;
+      // Trigger search immediately
+      doSearch();
+    }
+  })();
 
   // FAQ accordion
   document.querySelectorAll('.faq-q').forEach(q => {
