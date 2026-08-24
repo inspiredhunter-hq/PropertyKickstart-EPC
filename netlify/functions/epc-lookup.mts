@@ -1,563 +1,570 @@
 import type { Context } from "@netlify/functions";
 
-const EPC_API_BASE = "https://api.get-energy-performance-data.communities.gov.uk";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface SearchResult {
-  address: string;
-  certificateNumber: string;
+interface SearchRequest {
+  op: "search";
   postcode: string;
 }
 
-interface EpcCertificate {
-  epcRating: string;
-  score: number;
-  potentialRating: string;
-  potentialScore: number;
-  certDate: string;
-  expiryDate: string;
-  certNumber: string;
-  propertyType: string;
+interface CertificateRequest {
+  op: "certificate";
+  uprn?: string;
+  address?: string;
+  postcode?: string;
+}
+
+type EpcRequest = SearchRequest | CertificateRequest;
+
+interface EpcAddress {
+  uprn: string;
   address: string;
-  certificateNumber: string;
+  postcode: string;
+}
+
+interface EpcRecommendation {
+  improvement: string;
+  indicativeCost?: string;
+  typicalSaving?: string;
+}
+
+interface EpcCertificate {
+  uprn: string;
+  address: string;
+  postcode: string;
+  epcRating: string;
+  score: number | null;
+  potentialRating: string | null;
+  potentialScore: number | null;
+  certDate: string | null;
+  expiryDate: string | null;
+  certNumber: string | null;
+  propertyType: string | null;
+  builtForm: string | null;
+  totalFloorArea: number | null;
+  floorLevel: string | null;
+  heatingType: string | null;
+  hotWaterDescription: string | null;
+  wallsDescription: string | null;
+  roofDescription: string | null;
+  windowsDescription: string | null;
+  recommendations: EpcRecommendation[];
+  isExpired: boolean;
+  isHistorical: boolean;
   lookupTimestamp: string;
   source: string;
   epcEvidenceStatus: "Verified" | "Not found" | "Not checked";
   failureReason?: string;
-  officialCertUrl: string;
-  recommendations: string[];
-  // ACT-633: comparator enrichment fields
-  postcode?: string;
-  floorAreaSqm?: number | null;
-  builtForm?: string;
+  officialCertUrl: string | null;
 }
 
-// ACT-633: comparator types
-interface ComparableSale {
-  address: string;
-  soldPrice: number;
-  soldDate: string;
-  floorAreaSqm: number | null;
-  pricePerSqm: number | null;
-  matchConfidence: string;
+interface ServiceResponse<T> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+  code?: string;
 }
 
-interface ComparatorResult {
-  evidenceStrength: "Strong" | "Moderate" | "Limited" | "Insufficient";
-  selectedCount: number;
-  evidenceCount: number;
-  medianSoldPricePerSqm: number | null;
-  impliedValue: number | null;
-  impliedValueLow: number | null;
-  impliedValueHigh: number | null;
-  askingPricePerSqm: number | null;
-  premiumDiscountPct: number | null;
-  newestSaleDate: string | null;
-  oldestSaleDate: string | null;
-  geographyUsed: string | null;
-  timeWindowMonths: number | null;
-  comparables: ComparableSale[];
-  relaxationNotes: string[];
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-type ComparatorAvailability =
-  | { available: true; result: ComparatorResult }
-  | { available: false; reason: "temporarily_unavailable" | "insufficient_subject_data" | "unmapped_property_type" };
+const MHCLG_BASE = "https://epc.opendatacommunities.org/api/v1";
+const ALLOWED_ORIGINS = [
+  "https://epc.propertykickstart.co.uk",
+  "http://localhost:8888",
+  "http://localhost:3000",
+];
 
-function isMockMode(token: string | undefined): boolean {
-  return !token || token === "mock";
-}
+// Scottish/NI/Channel Islands/Isle of Man/overseas postcode prefixes to reject
+const NON_ENGLAND_WALES_PREFIXES = [
+  // Scotland
+  "AB", "DD", "DG", "EH", "FK", "G", "HS", "IV", "KA", "KW", "KY",
+  "ML", "PA", "PH", "TD", "ZE",
+  // Northern Ireland
+  "BT",
+  // Channel Islands / Isle of Man (not in EPC register)
+  "GY", "JE", "IM",
+];
 
-function getMockAddresses(postcode: string): SearchResult[] {
-  const pc = postcode.toUpperCase().replace(/\s+/g, " ");
-  return [
-    { address: `Flat 1, 12 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0001", postcode: pc },
-    { address: `Flat 2, 12 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0002", postcode: pc },
-    { address: `14 Example Street, ${pc}`, certificateNumber: "0000-0000-0000-0000-0003", postcode: pc },
-  ];
-}
+// Fetch timeout
+const FETCH_TIMEOUT_MS = 10_000;
 
-function getMockCertificate(certificateNumber: string): EpcCertificate {
-  const ratings = ["A", "B", "C", "D", "E", "F", "G"];
-  const idx = parseInt(certificateNumber.slice(-1)) % ratings.length;
-  const rating = ratings[idx];
-  const scores: Record<string, number> = { A: 92, B: 82, C: 72, D: 60, E: 45, F: 30, G: 15 };
+// ─── Mock Data ────────────────────────────────────────────────────────────────
+
+const MOCK_ADDRESSES: EpcAddress[] = [
+  {
+    uprn: "100023336956",
+    address: "10 Downing Street, London",
+    postcode: "SW1A 2AA",
+  },
+  {
+    uprn: "100023336957",
+    address: "11 Downing Street, London",
+    postcode: "SW1A 2AB",
+  },
+  {
+    uprn: "100023336958",
+    address: "12 Downing Street, London",
+    postcode: "SW1A 2AC",
+  },
+];
+
+const MOCK_CERTIFICATE: EpcCertificate = {
+  uprn: "100023336956",
+  address: "10 Downing Street, London",
+  postcode: "SW1A 2AA",
+  epcRating: "D",
+  score: 62,
+  potentialRating: "B",
+  potentialScore: 84,
+  certDate: "2022-03-15",
+  expiryDate: "2032-03-14",
+  certNumber: "0000-0000-0000-0000-0001",
+  propertyType: "Mid-terrace house",
+  builtForm: "Mid-Terrace",
+  totalFloorArea: 145,
+  floorLevel: null,
+  heatingType: "Gas boiler",
+  hotWaterDescription: "From main system",
+  wallsDescription: "Solid brick, no insulation (assumed)",
+  roofDescription: "Pitched, 100 mm loft insulation",
+  windowsDescription: "Mostly double glazing",
+  recommendations: [
+    {
+      improvement: "Add loft insulation",
+      indicativeCost: "£300–£500",
+      typicalSaving: "£150 per year",
+    },
+    {
+      improvement: "Install solar water heating",
+      indicativeCost: "£4,000–£6,000",
+      typicalSaving: "£55 per year",
+    },
+    {
+      improvement: "Solar photovoltaic panels, 2.5 kWp",
+      indicativeCost: "£3,500–£5,500",
+      typicalSaving: "£217 per year",
+    },
+  ],
+  isExpired: false,
+  isHistorical: false,
+  lookupTimestamp: new Date().toISOString(),
+  source: "MHCLG EPC API (mock)",
+  epcEvidenceStatus: "Verified",
+  officialCertUrl:
+    "https://find-energy-certificate.service.gov.uk/energy-certificate/0000-0000-0000-0000-0001",
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const allowed =
+    origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    epcRating: rating,
-    score: scores[rating] || 60,
-    potentialRating: rating === "A" ? "A" : ratings[Math.max(0, idx - 1)],
-    potentialScore: Math.min(100, (scores[rating] || 60) + 12),
-    certDate: "2022-06-15",
-    expiryDate: "2032-06-14",
-    certNumber: certificateNumber,
-    propertyType: "Flat",
-    address: `Mock Property, ${certificateNumber}`,
-    certificateNumber,
-    lookupTimestamp: new Date().toISOString(),
-    source: "mock",
-    epcEvidenceStatus: "Verified",
-    officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/${certificateNumber}`,
-    recommendations: [
-      "Add loft insulation",
-      "Install a more efficient boiler",
-      "Upgrade to double glazing",
-    ],
-    postcode: "AL10 0FR",
-    floorAreaSqm: 82,
-    builtForm: "Mid-Terrace",
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Content-Type": "application/json",
   };
+}
+
+function jsonResponse(
+  body: unknown,
+  status: number,
+  origin: string | null
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: corsHeaders(origin),
+  });
+}
+
+function validateEnglandWalesPostcode(raw: string): {
+  valid: boolean;
+  normalised?: string;
+  code?: string;
+  error?: string;
+} {
+  // Basic UK postcode regex
+  const cleaned = raw.replace(/\s+/g, "").toUpperCase();
+  const uk = /^[A-Z]{1,2}[0-9][0-9A-Z]?[0-9][ABD-HJLNP-UW-Z]{2}$/.test(
+    cleaned
+  );
+  if (!uk) {
+    return {
+      valid: false,
+      code: "INVALID_POSTCODE",
+      error: "Please enter a valid postcode.",
+    };
+  }
+
+  // Extract prefix (1 or 2 letters)
+  const prefix2 = cleaned.substring(0, 2).replace(/[0-9]/g, "");
+  const prefix1 = cleaned.substring(0, 1);
+
+  for (const p of NON_ENGLAND_WALES_PREFIXES) {
+    if (
+      cleaned.startsWith(p) &&
+      (p.length === 2 || prefix1 === p)
+    ) {
+      return {
+        valid: false,
+        code: "OUTSIDE_ENGLAND_WALES",
+        error:
+          "This tool covers England and Wales only. EPC certificates for Scotland and Northern Ireland are held in separate registers.",
+      };
+    }
+  }
+
+  // Normalise: insert space before last 3 chars
+  const normalised = cleaned.slice(0, -3) + " " + cleaned.slice(-3);
+  return { valid: true, normalised };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
-  maxRetries = 3
+  retries = 3
 ): Promise<Response> {
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const res = await fetch(url, options);
-    if (res.status !== 429) return res;
-    const backoff = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-    await new Promise((r) => setTimeout(r, backoff));
-    lastError = new Error("Rate limited by EPC API");
-  }
-  throw lastError ?? new Error("Max retries exceeded");
-}
-
-async function searchAddresses(
-  postcode: string,
-  token: string
-): Promise<SearchResult[]> {
-  const url = `${EPC_API_BASE}/api/domestic/search?postcode=${encodeURIComponent(postcode)}&page_size=20`;
-  const res = await fetchWithRetry(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
-
-  if (res.status === 404) {
-    return [];
-  }
-
-  if (!res.ok) {
-    throw new Error(`EPC API error: ${res.status}`);
-  }
-
-  const json = await res.json();
-  const rows = json?.data ?? [];
-
-  return rows.map((row: any) => {
-    const addressParts = [
-      row.addressLine1,
-      row.addressLine2,
-      row.addressLine3,
-      row.addressLine4,
-      row.postTown,
-    ].filter(Boolean);
-    return {
-      address: addressParts.join(", "),
-      certificateNumber: row.certificateNumber,
-      postcode: row.postcode ?? postcode,
-    };
-  });
-}
-
-async function fetchCertificate(
-  certificateNumber: string,
-  token: string
-): Promise<EpcCertificate> {
-  const url = `${EPC_API_BASE}/api/certificate?certificate_number=${encodeURIComponent(certificateNumber)}`;
-  const res = await fetchWithRetry(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
-
-  if (res.status === 404) {
-    return {
-      epcRating: "Unknown",
-      score: 0,
-      potentialRating: "Unknown",
-      potentialScore: 0,
-      certDate: "",
-      expiryDate: "",
-      certNumber: "",
-      propertyType: "",
-      address: "",
-      certificateNumber,
-      lookupTimestamp: new Date().toISOString(),
-      source: "live",
-      epcEvidenceStatus: "Not found",
-      failureReason: "No EPC certificate found for this property",
-      officialCertUrl: "",
-      recommendations: [],
-    };
-  }
-
-  if (!res.ok) {
-    throw new Error(`EPC API error: ${res.status}`);
-  }
-
-  const json = await res.json();
-  const d = json?.data;
-  if (!d) throw new Error("No data returned from EPC API");
-
-  const get = (...keys: string[]) => {
-    for (const k of keys) {
-      if (d[k] !== undefined && d[k] !== null) return d[k];
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, options);
+      if (res.status === 429 && attempt < retries - 1) {
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < retries - 1) {
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise((r) => setTimeout(r, delay));
+      }
     }
-    return undefined;
-  };
+  }
+  throw lastError ?? new Error("Fetch failed after retries");
+}
 
-  const regDate = get("registration_date", "lodgement_date") ?? "";
-  const explicitExpiry = get("expiry_date");
-  const expiryDate = explicitExpiry
-    ? String(explicitExpiry).slice(0, 10)
-    : regDate
-    ? new Date(new Date(regDate).getTime() + 10 * 365.25 * 24 * 3600 * 1000)
-        .toISOString()
-        .slice(0, 10)
-    : "";
+function parseExpiryDate(certDate: string | null): string | null {
+  if (!certDate) return null;
+  const d = new Date(certDate);
+  if (isNaN(d.getTime())) return null;
+  d.setFullYear(d.getFullYear() + 10);
+  return d.toISOString().substring(0, 10);
+}
 
-  const addressParts = [
-    get("address_line_1", "addressLine1"),
-    get("address_line_2", "addressLine2"),
-    get("address_line_3", "addressLine3"),
-    get("post_town", "postTown"),
-  ].filter(Boolean);
+function isExpired(expiryDate: string | null): boolean {
+  if (!expiryDate) return false;
+  return new Date(expiryDate) < new Date();
+}
 
-  // ACT-633: capture postcode, floor area and built form for comparator enrichment
-  const postcodeRaw = get("postcode");
-  const floorAreaRaw = get("total_floor_area", "totalFloorArea");
-  const floorAreaSqm =
-    floorAreaRaw !== undefined && floorAreaRaw !== null && floorAreaRaw !== ""
-      ? Number(floorAreaRaw)
-      : null;
-  const builtForm = get("built_form", "builtForm") ?? "";
+function mapRow(row: Record<string, unknown>): EpcCertificate {
+  const certDate =
+    (row["lodgement-date"] as string) ||
+    (row["inspection-date"] as string) ||
+    null;
+  const expiryDate =
+    (row["valid-until"] as string) || parseExpiryDate(certDate);
+  const uprn = String(row["uprn"] || row["building-reference-number"] || "");
+  const certNumber = (row["lmk-key"] as string) || null;
 
   return {
-    epcRating: get("current_energy_efficiency_band", "currentEnergyEfficiencyBand") ?? "Unknown",
-    score: parseInt(get("current_energy_efficiency", "currentEnergyEfficiency")) || 0,
-    potentialRating: get("potential_energy_efficiency_band", "potentialEnergyEfficiencyBand") ?? "Unknown",
-    potentialScore: parseInt(get("potential_energy_efficiency", "potentialEnergyEfficiency")) || 0,
-    certDate: regDate,
+    uprn,
+    address: [
+      row["address1"],
+      row["address2"],
+      row["address3"],
+      row["posttown"],
+    ]
+      .filter(Boolean)
+      .join(", "),
+    postcode: (row["postcode"] as string) || "",
+    epcRating: (row["current-energy-rating"] as string) || "Unknown",
+    score: row["current-energy-efficiency"]
+      ? Number(row["current-energy-efficiency"])
+      : null,
+    potentialRating: (row["potential-energy-rating"] as string) || null,
+    potentialScore: row["potential-energy-efficiency"]
+      ? Number(row["potential-energy-efficiency"])
+      : null,
+    certDate,
     expiryDate,
-    certNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
-    propertyType: String(get("property_type", "propertyType") ?? ""),
-    address: addressParts.join(", "),
-    certificateNumber: get("certificate_number", "certificateNumber") ?? certificateNumber,
-    lookupTimestamp: new Date().toISOString(),
-    source: "live",
-    epcEvidenceStatus: "Verified",
-    officialCertUrl: `https://find-energy-certificate.service.gov.uk/energy-certificate/${certificateNumber}`,
+    certNumber,
+    propertyType: (row["property-type"] as string) || null,
+    builtForm: (row["built-form"] as string) || null,
+    totalFloorArea: row["total-floor-area"]
+      ? Number(row["total-floor-area"])
+      : null,
+    floorLevel: (row["floor-level"] as string) || null,
+    heatingType: (row["main-heat-description"] as string) || null,
+    hotWaterDescription: (row["hot-water-description"] as string) || null,
+    wallsDescription: (row["walls-description"] as string) || null,
+    roofDescription: (row["roof-description"] as string) || null,
+    windowsDescription: (row["windows-description"] as string) || null,
     recommendations: [],
-    postcode: postcodeRaw ?? undefined,
-    floorAreaSqm: Number.isFinite(floorAreaSqm as number) ? floorAreaSqm : null,
-    builtForm,
+    isExpired: isExpired(expiryDate),
+    isHistorical: false,
+    lookupTimestamp: new Date().toISOString(),
+    source: "MHCLG EPC API",
+    epcEvidenceStatus: "Verified",
+    officialCertUrl: certNumber
+      ? `https://find-energy-certificate.service.gov.uk/energy-certificate/${certNumber}`
+      : null,
   };
 }
 
-function rejectOutOfScope(postcode: string): boolean {
-  // Scotland: starts with EH, G, KA, KY, DD, PH, AB, IV, KW, HS, ZE, PA, ML, FK, TD, DG, KA
-  // Northern Ireland: starts with BT
-  const outOfScope = /^(BT|AB|DF|DG|EH|FK|G[0-9]|HS|IV|KA|KW|KY|ML|PA|PH|TD|ZE)/i;
-  return outOfScope.test(postcode.trim());
-}
+// ─── Operation Handlers ───────────────────────────────────────────────────────
 
-// ACT-633: server-side comparator helper.
-// Calls the authenticated Supabase Edge Function; never exposes the Supabase
-// key or any HMLR/EPC database access to the browser. Comparator failure
-// must never break the underlying EPC lookup.
-async function fetchComparables(params: {
-  postcode?: string;
-  epcPropertyType?: string;
-  epcBuiltForm?: string;
-  floorAreaSqm?: number | null;
-  askingPrice?: number | null;
-}): Promise<ComparatorAvailability> {
-  const supabaseUrl = Netlify.env.get("PK_COMPARATOR_SUPABASE_URL");
-  const supabaseAnonKey = Netlify.env.get("PK_COMPARATOR_SUPABASE_ANON_KEY");
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return { available: false, reason: "temporarily_unavailable" };
+async function handleSearch(
+  postcode: string,
+  token: string,
+  isMock: boolean
+): Promise<ServiceResponse<EpcAddress[]>> {
+  const validation = validateEnglandWalesPostcode(postcode);
+  if (!validation.valid) {
+    return { ok: false, error: validation.error!, code: validation.code };
   }
 
-  const postcode = (params.postcode ?? "").trim();
-  const floorArea = params.floorAreaSqm;
-
-  if (!postcode || !floorArea || floorArea <= 0) {
-    return { available: false, reason: "insufficient_subject_data" };
+  if (isMock) {
+    return {
+      ok: true,
+      data: MOCK_ADDRESSES.map((a) => ({ ...a, postcode: validation.normalised! })),
+    };
   }
 
-  if (!params.epcPropertyType) {
-    return { available: false, reason: "unmapped_property_type" };
-  }
+  const url = `${MHCLG_BASE}/domestic/search?postcode=${encodeURIComponent(
+    validation.normalised!
+  )}&size=25`;
 
+  let res: Response;
   try {
-    const res = await fetchWithRetry(
-      `${supabaseUrl}/functions/v1/property-comparables`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseAnonKey}`,
-          apikey: supabaseAnonKey,
-        },
-        body: JSON.stringify({
-          postcode,
-          // ACT-633/ACT-642: send the already-resolved HMLR D/S/T/F code as
-          // `property_type` (the Edge Function uses this directly and skips
-          // its own epc_property_type/epc_built_form mapping when present).
-          // The Edge Function's own mapper expects EPC-native TEXT labels
-          // for epc_property_type/epc_built_form ("House", "Semi-Detached",
-          // etc.), not the raw numeric codes the live EPC API returns — so
-          // sending those numeric codes through as epc_property_type /
-          // epc_built_form fails there with 422 property_type_unresolved.
-          // Since mapEpcPropertyTypeToHmlr() has already done the numeric
-          // resolution correctly on this side, `property_type` is the only
-          // field that needs to travel; the epc_* fields are omitted to
-          // avoid ever falling back into the Edge Function's own mapper
-          // with values it cannot interpret.
-          property_type: params.epcPropertyType,
-          floor_area_sqm: floorArea,
-          asking_price: params.askingPrice ?? null,
-          target_count: 5,
-        }),
+    res = await fetchWithRetry(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
       },
-      2 // comparator failures must not hold up the EPC result; fewer retries
-    );
-
-    if (!res.ok) {
-      return { available: false, reason: "temporarily_unavailable" };
-    }
-
-    const json = await res.json();
-    if (!json || typeof json !== "object" || !json.result) {
-      return { available: false, reason: "temporarily_unavailable" };
-    }
-
-    return { available: true, result: json.result as ComparatorResult };
-  } catch {
-    // Never let a comparator failure surface database errors, stack traces
-    // or connectivity details to the client.
-    return { available: false, reason: "temporarily_unavailable" };
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      error: "The EPC lookup service is temporarily unavailable. Please try again shortly.",
+      code: "API_TIMEOUT",
+    };
   }
+
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, error: "EPC API authentication error.", code: "AUTH_ERROR" };
+  }
+  if (res.status === 404) {
+    return { ok: true, data: [] };
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: `EPC API returned status ${res.status}.`,
+      code: "API_ERROR",
+    };
+  }
+
+  let json: { rows?: Record<string, unknown>[] };
+  try {
+    json = await res.json();
+  } catch {
+    return { ok: false, error: "Invalid response from EPC API.", code: "PARSE_ERROR" };
+  }
+
+  const rows = json.rows ?? [];
+  const addresses: EpcAddress[] = rows.map((row) => ({
+    uprn: String(row["uprn"] || row["building-reference-number"] || ""),
+    address: [row["address1"], row["address2"], row["address3"], row["posttown"]]
+      .filter(Boolean)
+      .join(", "),
+    postcode: (row["postcode"] as string) || validation.normalised!,
+  }));
+
+  return { ok: true, data: addresses };
 }
 
-export default async function handler(
-  req: Request,
-  context: Context
-): Promise<Response> {
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+async function handleCertificate(
+  req: CertificateRequest,
+  token: string,
+  isMock: boolean
+): Promise<ServiceResponse<EpcCertificate | EpcCertificate[]>> {
+  if (isMock) {
+    return { ok: true, data: MOCK_CERTIFICATE };
   }
 
-  const token = Netlify.env.get("EPC_API_TOKEN");
-  const mock = isMockMode(token);
+  let url: string;
+  if (req.uprn) {
+    url = `${MHCLG_BASE}/domestic/certificate/${encodeURIComponent(req.uprn)}`;
+  } else if (req.address && req.postcode) {
+    const validation = validateEnglandWalesPostcode(req.postcode);
+    if (!validation.valid) {
+      return { ok: false, error: validation.error!, code: validation.code };
+    }
+    url = `${MHCLG_BASE}/domestic/search?postcode=${encodeURIComponent(
+      validation.normalised!
+    )}&address=${encodeURIComponent(req.address)}&size=5`;
+  } else {
+    return {
+      ok: false,
+      error: "Provide either uprn r or address+postcode.",
+      code: "MISSING_PARAMS",
+    };
+  }
 
-  let body: {
-    op: string;
-    postcode?: string;
-    certificateNumber: string;
-    askingPrice?: number;
-  };
+  let res: Response;
+  try {
+    res = await fetchWithRetry(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    return {
+      ok: false,
+      error: "The EPC lookup service is temporarily unavailable. Please try again shortly.",
+      code: "API_TIMEOUT",
+    };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, error: "EPC API authentication error.", code: "AUTH_ERROR" };
+  }
+
+  if (res.status === 404) {
+    return {
+      ok: true,
+      data: {
+        ...MOCK_CERTIFICATE,
+        epcEvidenceStatus: "Not found",
+        failureReason: "No EPC certificate found for this property.",
+        lookupTimestamp: new Date().toISOString(),
+        source: "MHCLG EPC API",
+        epcRating: "Unknown",
+        score: null,
+      },
+    };
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: `EPC API returned status ${res.status}.`,
+      code: "API_ERROR",
+    };
+  }
+
+  let json: { rows?: Record<string, unknown>[] } | Record<string, unknown>;
+  try {
+    json = await res.json();
+  } catch {
+    return { ok: false, error: "Invalid response from EPC API.", code: "PARSE_ERROR" };
+  }
+
+  if ("rows" in json && Array.isArray(json.rows)) {
+    const rows = json.rows as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return {
+        ok: true,
+        data: {
+          ...MOCK_CERTIFICATE,
+          uprn: req.uprn || "",
+          address: req.address || "",
+          postcode: req.postcode || "",
+          epcEvidenceStatus: "Not found",
+          failureReason: "No EPC certificate found for this property.",
+          lookupTimestamp: new Date().toISOString(),
+          source: "MHCLG EPC API",
+          epcRating: "Unknown",
+          score: null,
+          recommendations: [],
+        },
+      };
+    }
+    const mapped = rows.map((row, i) => ({ ...mapRow(row), isHistorical: i > 0 }));
+    return { ok: true, data: mapped.length === 1 ? mapped[0] : mapped };
+  }
+
+  const cert = mapRow(json as Record<string, unknown>);
+  return { ok: true, data: cert };
+}
+
+// ─── Entry Point ──────────────────────────────────────────────────────────────
+
+export default async function handler(req: Request, _ctx: Context) {
+  const origin = req.headers.get("origin");
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+
+  if (req.method !== "POST") {
+    return jsonResponse(
+      { ok: false, error: "Method not allowed.", code: "METHOD_NOT_ALLOWED" },
+      405,
+      origin
+    );
+  }
+
+  let body: EpcRequest;
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse(
+      { ok: false, error: "Invalid JSON body.", code: "BAD_REQUEST" },
+      400,
+      origin
+    );
   }
 
-  try {
-    if (body.op === "search") {
-      const postcode = (body.postcode ?? "").trim().toUpperCase();
-      if (!postcode) {
-        return new Response(
-          JSON.stringify({ error: "postcode is required" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      if (rejectOutOfScope(postcode)) {
-        return new Response(
-          JSON.stringify({
-            error: "out_of_scope",
-            message:
-              "The EPC Checker only covers England and Wales. Scotland and Northern Ireland are not currently supported.",
-          }),
-          { status: 422, headers: { "Content-Type": "application/json" } }
-        );
-      }
+  // @ts-ignore — Netlify.env is available at runtime
+  const token: string = Netlify.env.get("EPC_API_TOKEN") ?? "";
+  const isMock = !token || token === "mock";
 
-      const results = mock
-        ? getMockAddresses(postcode)
-        : await searchAddresses(postcode, token!);
-
-      return new Response(JSON.stringify({ addresses: results, mock }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (body.op === "certificate") {
-      const certificateNumber = (body.certificateNumber ?? "").trim();
-      if (!certificateNumber) {
-        return new Response(
-          JSON.stringify({ error: "certificateNumber is required" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
-      }
-
-      const cert = mock
-        ? getMockCertificate(certificateNumber)
-        : await fetchCertificate(certificateNumber, token!);
-
-      // ACT-633: attach comparator evidence. A comparator failure must never
-      // break the EPC result — always return the EPC data; comparables is
-      // its own independent, gracefully-degrading field.
-      let comparables: ComparatorAvailability = {
-        available: false,
-        reason: "insufficient_subject_data",
-      };
-
-      if (cert.epcEvidenceStatus === "Verified") {
-        const epcPropertyType = mapEpcPropertyTypeToHmlr(cert.propertyType, cert.builtForm);
-        comparables = await fetchComparables({
-          postcode: cert.postcode,
-          epcPropertyType,
-          epcBuiltForm: cert.builtForm,
-          floorAreaSqm: cert.floorAreaSqm ?? null,
-          askingPrice: null,
-        });
-      }
-
-      return new Response(
-        JSON.stringify({ certificate: cert, comparables, mock }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
+  if (body.op === "search") {
+    if (!body.postcode) {
+      return jsonResponse(
+        { ok: false, error: "postcode is required.", code: "MISSING_POSTCODE" },
+        400,
+        origin
       );
     }
-
-    // ACT-633: optional standalone asking-price recalculation. Never calls
-    // Supabase from the browser — always routes through this server function.
-    if (body.op === "comparables") {
-      const postcode = (body.postcode ?? "").trim();
-      const askingPrice =
-        typeof body.askingPrice === "number" && body.askingPrice > 0
-          ? body.askingPrice
-          : null;
-
-      // These fields are supplied by the frontend from the already-fetched
-      // certificate response, not re-derived from EPC address data.
-      const epcPropertyType = (body as any).epcPropertyType as string | undefined;
-      const epcBuiltForm = (body as any).epcBuiltForm as string | undefined;
-      const floorAreaSqm = (body as any).floorAreaSqm as number | undefined;
-
-      const comparables = await fetchComparables({
-        postcode,
-        epcPropertyType: epcPropertyType
-          ? mapEpcPropertyTypeToHmlr(epcPropertyType, epcBuiltForm)
-          : undefined,
-        epcBuiltForm,
-        floorAreaSqm: floorAreaSqm ?? null,
-        askingPrice,
-      });
-
-      return new Response(JSON.stringify({ comparables }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({ error: "Unknown op" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Internal error";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-}
-
-// ACT-633: map EPC-native property_type + built_form to HMLR D/S/T/F/O.
-// Mapping logic stays server-side only, per the governing spec.
-//
-// The live MHCLG EPC API (api.get-energy-performance-data.communities.gov.uk)
-// returns property_type and built_form as NUMERIC CODES, not string labels,
-// despite official RdSAP documentation describing them as text. No official
-// numeric dictionary exists for built_form (confirmed absent from the GOV.UK
-// EPC Statistics data dictionary and glossary — see ACT-633/ACT-641).
-//
-// property_type IS officially documented (GOV.UK EPC Statistics data
-// dictionary, EPC_Statistics_data_dictionary.ods):
-//   0 = House, 1 = Bungalow, 2 = Flat, 3 = Maisonette, 4 = Park home
-//
-// built_form is EMPIRICALLY DERIVED (ACT-633/ACT-642) by cross-referencing
-// live certificate responses against each property's own official
-// find-energy-certificate.service.gov.uk page, houses/bungalows only
-// (flats' "Property type" field on gov.uk shows floor position, not true
-// built form, so it cannot be used as ground truth for built_form):
-//   1 = Detached, 2 = Semi-detached, 3 = End-terrace, 4 = Mid-terrace
-// Enclosed end-terrace / enclosed mid-terrace (rare RdSAP variants) were
-// not encountered in the sample and are intentionally left unmapped rather
-// than guessed — properties with those built_form codes fall through to
-// "unmapped_property_type" and are excluded from the comparator, same as
-// any other genuinely unknown value.
-const EPC_PROPERTY_TYPE_CODE: Record<string, "house" | "bungalow" | "flat" | "maisonette" | "park_home"> = {
-  "0": "house",
-  "1": "bungalow",
-  "2": "flat",
-  "3": "maisonette",
-  "4": "park_home",
-};
-
-// Empirically derived (ACT-633/ACT-642) — see comment above. Only codes
-// confirmed against an official gov.uk certificate page are included.
-const EPC_BUILT_FORM_CODE: Record<string, "D" | "S" | "T"> = {
-  "1": "D", // Detached
-  "2": "S", // Semi-detached
-  "3": "T", // End-terrace
-  "4": "T", // Mid-terrace
-};
-
-function mapEpcPropertyTypeToHmlr(
-  epcPropertyType: string | undefined,
-  epcBuiltForm?: string | number | undefined
-): string | undefined {
-  if (epcPropertyType === undefined || epcPropertyType === null) return undefined;
-  const rawType = String(epcPropertyType).trim();
-  if (!rawType) return undefined;
-
-  // Numeric-code path — the live API's actual contract.
-  if (/^\d+$/.test(rawType)) {
-    const kind = EPC_PROPERTY_TYPE_CODE[rawType];
-    if (!kind) return undefined; // unrecognised code — do not guess
-
-    if (kind === "flat" || kind === "maisonette") return "F";
-    if (kind === "park_home") return undefined; // no defensible HMLR equivalent
-
-    // house or bungalow: shape comes from built_form
-    const rawBuiltForm = epcBuiltForm === undefined || epcBuiltForm === null ? "" : String(epcBuiltForm).trim();
-    const hmlrShape = EPC_BUILT_FORM_CODE[rawBuiltForm];
-    return hmlrShape; // undefined (not guessed) if built_form is missing/unrecognised
+    const result = await handleSearch(body.postcode, token, isMock);
+    return jsonResponse(result, result.ok ? 200 : 400, origin);
   }
 
-  // Fallback: string-label path, retained in case the API ever reverts to
-  // (or a future version restores) text labels as originally specified.
-  const t = rawType.toLowerCase();
-  if (t.includes("flat") || t.includes("maisonette")) return "F";
-  if (t.includes("detached") && !t.includes("semi")) return "D";
-  if (t.includes("semi-detached") || t.includes("semi detached")) return "S";
-  if (t.includes("terrace")) return "T";
-  return undefined; // unmapped types are excluded from the comparator, not guessed
+  if (body.op === "certificate") {
+    const result = await handleCertificate(
+      body as CertificateRequest,
+      token,
+      isMock
+    );
+    return jsonResponse(result, result.ok ? 200 : 400, origin);
+  }
+
+  return jsonResponse(
+    { ok: false, error: "Unknown operation.", code: "UNKNOWN_OP" },
+    400,
+    origin
+  );
 }
+
+export const config = {
+  path: "/api/epc-lookup",
+};
