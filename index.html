@@ -967,7 +967,7 @@
             </div>
 
             <div class="historical-notice" id="historical-notice">
-              ⚠️ <strong>Older certificate shown.</strong> Multiple EPC certificates have been lodged for this property. The most recent is displayed. Older certificates may reflect significantly different ratings.
+              ⚠️ <strong>Historical certificates available.</strong> Multiple EPC certificates have been lodged for this property. The most recent is displayed. Older certificates may reflect significantly different ratings.
             </div>
 
             <!-- EPC Band Visual -->
@@ -1214,7 +1214,7 @@
       if (!iso) return '—';
       const d = new Date(iso);
       if (isNaN(d)) return iso;
-      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
     }
 
     function epcBandColor(band) {

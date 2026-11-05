@@ -31,7 +31,7 @@ function map(r:Record<string,unknown>, historical=false) {
  if(!/^\d{4}(?:-\d{4}){4}$/.test(certNumber)||!certDate||!address(r)||!uprn(r)||!/^[A-G]$/.test(rating)||score===null||score<1||score>100)throw Error("INVALID_UPSTREAM");
  const recommendations=Array.isArray(r.suggested_improvements)?r.suggested_improvements.map((v:any)=>({
   improvement:text(v.improvement_details?.improvement_texts?.improvement_summary)||text(v.improvement_details?.improvement_texts?.improvement_description)||"See improvement details on the official certificate",
-  indicativeCost:text(v.indicative_cost),typicalSaving:text(v.typical_saving)
+  indicativeCost:text(v.indicative_cost),typicalSaving:v.typical_saving?.currency==="GBP"?"£"+text(v.typical_saving):text(v.typical_saving)
  })):[];
  return {uprn:uprn(r),address:address(r),postcode:str(r.postcode),epcRating:rating,score,
  potentialRating:date(field(r,"potential_energy_efficiency_band","potentialEnergyEfficiencyBand","potential-energy-rating")),potentialScore:numeric(field(r,"energy_rating_potential","potentialEnergyEfficiency","potential-energy-efficiency")),
