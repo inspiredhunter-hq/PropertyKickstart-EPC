@@ -1,0 +1,28 @@
+name: EPC production smoke test
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/epc-smoke.yml']
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check live EPC lookup response
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          url="https://epc.propertykickstart.co.uk/api/epc-lookup"
+          for code,body in [("postcode",{"op":"search","postcode":"NE33 2RY"}),("invalid",{"op":"search","postcode":"BAD"})]:
+            req=urllib.request.Request(url,data=json.dumps(body).encode(),headers={"Content-Type":"application/json"},method="POST")
+            try:
+              with urllib.request.urlopen(req,timeout=25) as r: status=r.status; result=json.load(r)
+            except urllib.error.HTTPError as e:
+              status=e.code;result=json.loads(e.read())
+            print(code,"HTTP",status,"ok",result.get("ok"),"code",result.get("code"),"records",len(result.get("data",[])) if isinstance(result.get("data"),list) else "n/a")
+            if code=="postcode":
+              assert status==200 and result.get("ok") is True and isinstance(result.get("data"),list) and len(result["data"])>0, "Valid postcode search did not return properties"
+            else:
+              assert result.get("code")=="INVALID_POSTCODE","Invalid postcode validation failed"
+          PY
