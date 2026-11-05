@@ -10,8 +10,9 @@ const str = (v:unknown) => v==null?"":String(v);
 const date = (v:unknown) => str(v)||null;
 const numeric = (v:unknown) => v===null||v===undefined||v===""?null:Number.isFinite(Number(v))?Number(v):null;
 const field=(r:Record<string,unknown>,...names:string[])=>names.map(n=>r[n]).find(v=>v!==undefined&&v!==null&&v!=="");
-const address = (r:Record<string,unknown>) => [field(r,"addressLine1","address1"),field(r,"addressLine2","address2"),field(r,"addressLine3","address3"),field(r,"postTown","posttown")].filter(Boolean).join(", ");
+const address = (r:Record<string,unknown>) => {const parts=[field(r,"addressLine1","address1","address-1"),field(r,"addressLine2","address2","address-2"),field(r,"addressLine3","address3","address-3"),field(r,"postTown","posttown","post-town")].filter(Boolean).map(String);return parts.join(", ")||str(field(r,"address","fullAddress","full-address"));};
 const uprn=(r:Record<string,unknown>)=>str(field(r,"uprn","buildingReferenceNumber","building-reference-number"));
+const BigIntSafeEqual=(a:string,b:string)=>a.replace(/^0+/,"")===b.replace(/^0+/,"");
 const certificateKey=(r:Record<string,unknown>)=>str(field(r,"lmkKey","lmk-key"));
 const rowsOf = (payload:unknown):Record<string,unknown>[] => {if(!payload||typeof payload!=="object")throw Error("INVALID_UPSTREAM");const p=payload as Record<string,unknown>;const rows=p.data??p.rows;if(!Array.isArray(rows))throw Error("INVALID_UPSTREAM");if(rows.some(r=>!r||typeof r!=="object"||Array.isArray(r)))throw Error("INVALID_UPSTREAM");return rows as Record<string,unknown>[]};
 function map(r:Record<string,unknown>, historical=false) {
@@ -51,9 +52,9 @@ export default async function handler(req:Request,_ctx:Context){
    // Search by postcode or UPRN, then match the exact selected property. UPRNs are not certificate LMK keys.
    const qs=p?"postcode="+encodeURIComponent(p):"uprn="+encodeURIComponent(str(body.uprn));
    const rows=await upstream("/domestic/search?"+qs+"&size=100",token);
-   const matched=rows.filter(r=>body.uprn?uprn(r)===str(body.uprn):address(r).toUpperCase()===str(body.address).trim().toUpperCase());
+   const matched=rows.filter(r=>{const requestedUprn=str(body.uprn).trim();const actualUprn=uprn(r);if(requestedUprn&&actualUprn)return BigIntSafeEqual(requestedUprn,actualUprn);return address(r).trim().toUpperCase()===str(body.address).trim().toUpperCase();});
    if(!matched.length)return reply({ok:true,data:{epcEvidenceStatus:"Not found",failureReason:"No EPC certificate found for this property.",uprn:str(body.uprn),address:str(body.address),postcode:p||"",lookupTimestamp:new Date().toISOString(),source:"MHCLG EPC API",epcRating:"Unknown",score:null,recommendations:[],officialCertUrl:null}},200,origin);
-   matched.sort((a,b)=>str(b["lodgement-date"]).localeCompare(str(a["lodgement-date"])));
+   matched.sort((a,b)=>str(field(b,"lodgementDate","lodgement-date","registrationDate")).localeCompare(str(field(a,"lodgementDate","lodgement-date","registrationDate"))));
    const mapped=matched.map((r,i)=>map(r,i>0));return reply({ok:true,data:mapped.length===1?mapped[0]:mapped},200,origin);
   }
   return reply(fail("UNKNOWN_OP","Unknown operation."),400,origin);
