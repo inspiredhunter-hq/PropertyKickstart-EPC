@@ -42,8 +42,8 @@ export default async function handler(req:Request,_ctx:Context){
   if(body.op==="search"){
    if(typeof body.postcode!=="string")return reply(fail("MISSING_POSTCODE","postcode is required."),400,origin);
    const p=postcode(body.postcode);const rows=await upstream("/domestic/search?postcode="+encodeURIComponent(p)+"&size=100",token);
-   const seen=new Set<string>();const data=rows.map(r=>({uprn:str(r.uprn??r["building-reference-number"]),address:address(r),postcode:str(r.postcode)||p})).filter(r=>{const key=r.uprn||r.address.toUpperCase();if(!r.address||seen.has(key))return false;seen.add(key);return true});
-   return reply({ok:true,data},200,origin);
+   const seen=new Set<string>();const data=rows.map(r=>({uprn:uprn(r),address:address(r),postcode:str(r.postcode)||p})).filter(r=>{const key=r.uprn||r.address.toUpperCase();if(!r.address||seen.has(key))return false;seen.add(key);return true});
+   if(rows.length>0&&data.length===0)return reply(fail("INVALID_UPSTREAM","The EPC service returned records without usable addresses."),502,origin);return reply({ok:true,data},200,origin);
   }
   if(body.op==="certificate"){
    if(!body.uprn&&!(body.address&&body.postcode))return reply(fail("MISSING_PARAMS","Provide a UPRN or address and postcode."),400,origin);
@@ -51,7 +51,7 @@ export default async function handler(req:Request,_ctx:Context){
    // Search by postcode or UPRN, then match the exact selected property. UPRNs are not certificate LMK keys.
    const qs=p?"postcode="+encodeURIComponent(p):"uprn="+encodeURIComponent(str(body.uprn));
    const rows=await upstream("/domestic/search?"+qs+"&size=100",token);
-   const matched=rows.filter(r=>body.uprn?str(r.uprn??r["building-reference-number"])===str(body.uprn):address(r).toUpperCase()===str(body.address).trim().toUpperCase());
+   const matched=rows.filter(r=>body.uprn?uprn(r)===str(body.uprn):address(r).toUpperCase()===str(body.address).trim().toUpperCase());
    if(!matched.length)return reply({ok:true,data:{epcEvidenceStatus:"Not found",failureReason:"No EPC certificate found for this property.",uprn:str(body.uprn),address:str(body.address),postcode:p||"",lookupTimestamp:new Date().toISOString(),source:"MHCLG EPC API",epcRating:"Unknown",score:null,recommendations:[],officialCertUrl:null}},200,origin);
    matched.sort((a,b)=>str(b["lodgement-date"]).localeCompare(str(a["lodgement-date"])));
    const mapped=matched.map((r,i)=>map(r,i>0));return reply({ok:true,data:mapped.length===1?mapped[0]:mapped},200,origin);
