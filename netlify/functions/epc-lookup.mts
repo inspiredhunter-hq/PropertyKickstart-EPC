@@ -49,7 +49,7 @@ export default async function handler(req:Request,_ctx:Context){
    const qs=body.uprn?"uprn="+encodeURIComponent(str(body.uprn)):"postcode="+encodeURIComponent(p!);
    const rows=await upstream("/domestic/search?"+qs+"&size=100",token);
    const matched=rows.filter(r=>body.uprn?str(r.uprn??r["building-reference-number"])===str(body.uprn):address(r).toUpperCase()===str(body.address).trim().toUpperCase());
-   if(!matched.length)return reply({ok:true,data:[],code:"NOT_FOUND"},200,origin);
+   if(!matched.length)return reply({ok:true,data:{epcEvidenceStatus:"Not found",failureReason:"No EPC certificate found for this property.",uprn:str(body.uprn),address:str(body.address),postcode:p||"",lookupTimestamp:new Date().toISOString(),source:"MHCLG EPC API",epcRating:"Unknown",score:null,recommendations:[],officialCertUrl:null}},200,origin);
    matched.sort((a,b)=>str(b["lodgement-date"]).localeCompare(str(a["lodgement-date"])));
    const mapped=matched.map((r,i)=>map(r,i>0));return reply({ok:true,data:mapped.length===1?mapped[0]:mapped},200,origin);
   }
