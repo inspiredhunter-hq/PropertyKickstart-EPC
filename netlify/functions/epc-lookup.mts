@@ -25,7 +25,7 @@ const descriptions = (v:any):string|null => {
 const safeDate=(v:unknown)=>{const s=str(v);return /^\d{4}-\d{2}-\d{2}/.test(s)&&!Number.isNaN(Date.parse(s))?s.slice(0,10):null};
 function map(r:Record<string,unknown>, historical=false) {
  const certDate=safeDate(field(r,"registration_date","registrationDate","lodgementDate","lodgement-date","inspection_date","inspectionDate","inspection-date"));
- const expiryDate=safeDate(field(r,"validUntil","valid_until","valid-until"))||(certDate?new Date(new Date(certDate).setUTCFullYear(new Date(certDate).getUTCFullYear()+10)).toISOString().slice(0,10):null);
+ const expiryDate=safeDate(field(r,"validUntil","valid_until","valid-until"))||(certDate?new Date(new Date(certDate).setUTCFullYear(new Date(certDate).getUTCFullYear()+10)-86400000).toISOString().slice(0,10):null);
  const certNumber=certificateKey(r);const rating=str(field(r,"current_energy_efficiency_band","currentEnergyEfficiencyBand","current-energy-rating"));
  const score=numeric(field(r,"energy_rating_current","currentEnergyEfficiency","current-energy-efficiency"));
  if(!/^\d{4}(?:-\d{4}){4}$/.test(certNumber)||!certDate||!address(r)||!uprn(r)||!/^[A-G]$/.test(rating)||score===null||score<1||score>100)throw Error("INVALID_UPSTREAM");
