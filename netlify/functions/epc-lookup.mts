@@ -7,7 +7,9 @@ const reply = (body: unknown, status=200, origin?: string|null) => new Response(
 const fail = (code:string,error:string) => ({ok:false,code,error});
 const postcode = (s:string) => {const p=s.replace(/\s/g,"").toUpperCase();if(!/^[A-Z]{1,2}[0-9][0-9A-Z]?[0-9][ABD-HJLNP-UW-Z]{2}$/.test(p))throw Error("INVALID_POSTCODE");if(excluded.includes(p.match(/^[A-Z]+/)![0]))throw Error("OUTSIDE_ENGLAND_WALES");return p.slice(0,-3)+" "+p.slice(-3)};
 const str = (v:unknown) => v==null?"":String(v);
-const date = (v:unknown) => str(v)||null;
+const scalar = (v:any):any => v && typeof v==="object" && "value" in v ? scalar(v.value) : v;
+const text = (v:unknown):string|null => {const x=scalar(v);return typeof x==="string"||typeof x==="number"?String(x):null};
+const date = (v:unknown) => text(v);
 const numeric = (v:unknown) => v===null||v===undefined||v===""?null:Number.isFinite(Number(v))?Number(v):null;
 const field=(r:Record<string,unknown>,...names:string[])=>names.map(n=>r[n]).find(v=>v!==undefined&&v!==null&&v!=="");
 const address = (r:Record<string,unknown>) => {const parts=[field(r,"address_line_1","addressLine1","address1","address-1"),field(r,"address_line_2","addressLine2","address2","address-2"),field(r,"address_line_3","addressLine3","address3","address-3"),field(r,"address_line_4","addressLine4"),field(r,"post_town","postTown","posttown","post-town")].filter(Boolean).map(String);return parts.join(", ")||str(field(r,"address","fullAddress","full-address"));};
@@ -17,7 +19,7 @@ const certificateKey=(r:Record<string,unknown>)=>str(field(r,"certificateNumber"
 const rowsOf = (payload:unknown):Record<string,unknown>[] => {if(!payload||typeof payload!=="object")throw Error("INVALID_UPSTREAM");const p=payload as Record<string,unknown>;const rows=p.data??p.rows;if(!Array.isArray(rows))throw Error("INVALID_UPSTREAM");if(rows.some(r=>!r||typeof r!=="object"||Array.isArray(r)))throw Error("INVALID_UPSTREAM");return rows as Record<string,unknown>[]};
 const descriptions = (v:any):string|null => {
  const list=Array.isArray(v)?v:[v];
- const values=list.map(x=>typeof x==="string"?x:x&&typeof x.description==="string"?x.description:"").filter(Boolean);
+ const values=list.map(x=>typeof x==="string"?x:text(x?.description)||"").filter(Boolean);
  return values.length?[...new Set(values)].join("; "):null;
 };
 const safeDate=(v:unknown)=>{const s=str(v);return /^\d{4}-\d{2}-\d{2}/.test(s)&&!Number.isNaN(Date.parse(s))?s.slice(0,10):null};
@@ -28,8 +30,8 @@ function map(r:Record<string,unknown>, historical=false) {
  const score=numeric(field(r,"energy_rating_current","currentEnergyEfficiency","current-energy-efficiency"));
  if(!/^\d{4}(?:-\d{4}){4}$/.test(certNumber)||!certDate||!address(r)||!uprn(r)||!/^[A-G]$/.test(rating)||score===null||score<1||score>100)throw Error("INVALID_UPSTREAM");
  const recommendations=Array.isArray(r.suggested_improvements)?r.suggested_improvements.map((v:any)=>({
-  improvement:v.improvement_details?.improvement_texts?.improvement_summary||v.improvement_details?.improvement_texts?.improvement_description||"See improvement details on the official certificate",
-  indicativeCost:v.indicative_cost==null?null:String(v.indicative_cost),typicalSaving:v.typical_saving==null?null:String(v.typical_saving)
+  improvement:text(v.improvement_details?.improvement_texts?.improvement_summary)||text(v.improvement_details?.improvement_texts?.improvement_description)||"See improvement details on the official certificate",
+  indicativeCost:text(v.indicative_cost),typicalSaving:text(v.typical_saving)
  })):[];
  return {uprn:uprn(r),address:address(r),postcode:str(r.postcode),epcRating:rating,score,
  potentialRating:date(field(r,"potential_energy_efficiency_band","potentialEnergyEfficiencyBand","potential-energy-rating")),potentialScore:numeric(field(r,"energy_rating_potential","potentialEnergyEfficiency","potential-energy-efficiency")),
