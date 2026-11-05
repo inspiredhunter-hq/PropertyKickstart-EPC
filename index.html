@@ -1388,7 +1388,7 @@
       if (cert.isExpired) {
         badge.textContent = 'Expired';
         badge.className = 'status-badge badge-expired';
-      } else if (cert.isHistorical || hasHistorical) {
+      } else if (cert.isHistorical) {
         badge.textContent = 'Historical';
         badge.className = 'status-badge badge-historical';
       } else {
@@ -1519,3 +1519,4 @@
   </script>
 </body>
 </html>
+
