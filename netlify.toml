@@ -10,7 +10,7 @@
 # The privacy domain must be assigned to this Netlify project before DNS is switched live.
 [[redirects]]
   from = "https://privacy.propertykickstart.co.uk/*"
-  to = "/property-kickstart-privacy-v1.0-2026-08-19.html"
+  to = "/property-kickstart-privacy-v1.6-2026-11-07.html"
   status = 200
   force = true
 
